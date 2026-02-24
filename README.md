@@ -5,11 +5,12 @@ Assistente de IA autônomo e multimodal integrado ao WhatsApp, projetado para at
 ## 🚀 Funcionalidades Principais
 
 ### 🧠 Inteligência Artificial & Multimodalidade
-- **Processamento de Linguagem Natural**: Integração com **OpenAI GPT-4o** para compreensão profunda de contexto e instruções.
-- **Visão Computacional**: Capacidade de analisar e descrever imagens enviadas pelo usuário (ex: "O que tem nesta foto?", "Extraia os dados desta planilha").
+- **Processamento de Linguagem Natural**: Integração nativa com **Ollama** (rodando modelos locais como Llama 3, Mistral) para privacidade e independência da OpenAI.
+- **Suporte a OpenAI (Legado)**: Possibilidade de reativar a integração com OpenAI via configuração.
+- **Visão Computacional**: Suporte a modelos multimodais (como Llama 3.2 Vision ou via OpenAI GPT-4o).
 - **Suporte a Voz (Bidirecional)**:
-  - **Speech-to-Text (STT)**: Transcrição automática de áudios recebidos via WhatsApp usando **Whisper**.
-  - **Text-to-Speech (TTS)**: Respostas em áudio sintético natural (configurável via `.env`).
+  - **Speech-to-Text (STT)**: Transcrição automática (Nota: Requer configuração de serviço compatível, atualmente desabilitado no modo Ollama local).
+  - **Text-to-Speech (TTS)**: Respostas em áudio (Nota: Atualmente desabilitado no modo Ollama local).
 
 ### 🛠 Sistema de Skills (Habilidades)
 O bot possui um sistema extensível de skills que permite interagir com o mundo real:
@@ -81,12 +82,17 @@ PORT=3000
 NODE_ENV=development
 LOG_LEVEL=info
 
-# IA (OpenAI)
-OPENAI_API_KEY=sk-proj-...
+# IA (Ollama)
+OLLAMA_HOST=http://ollama:11434
+OLLAMA_MODEL=llama3
+
+# IA (OpenAI - Opcional)
+# OPENAI_API_KEY=sk-proj-...
 
 # Segurança (Números permitidos - Formato Internacional sem +)
 # Ex: 55 (Brasil) + DDD + Número
 WHITELIST_NUMBERS=5511999999999,5511888888888
+
 
 # WhatsApp Session (Onde salvar as credenciais)
 WHATSAPP_SESSION_PATH=./auth_info_baileys

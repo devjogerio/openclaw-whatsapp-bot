@@ -1,6 +1,7 @@
 import { IMessagingClient } from '../interfaces/IMessagingClient';
 import { SecurityService } from '../services/SecurityService';
-import { OpenAIService } from '../../infrastructure/ai/OpenAIService';
+import { OllamaService } from '../../infrastructure/ai/OllamaService';
+import { IAIService } from '../interfaces/IAIService';
 import { logger } from '../../utils/logger';
 import { proto, downloadMediaMessage } from '@whiskeysockets/baileys';
 import { SkillRegistry } from '../services/SkillRegistry';
@@ -18,7 +19,7 @@ import { config } from '../../config/env';
  */
 export class MessageHandler {
     private securityService: SecurityService;
-    private aiService: OpenAIService;
+    private aiService: IAIService;
     private client: IMessagingClient;
     private skillRegistry: SkillRegistry;
     private contextManager: IContextManager;
@@ -32,8 +33,8 @@ export class MessageHandler {
         this.skillRegistry = new SkillRegistry();
         this.registerSkills();
 
-        // Injeta registro de skills no serviço de IA
-        this.aiService = new OpenAIService(this.skillRegistry);
+        // Injeta registro de skills no serviço de IA (Agora usando Ollama)
+        this.aiService = new OllamaService(this.skillRegistry);
     }
 
     /**
