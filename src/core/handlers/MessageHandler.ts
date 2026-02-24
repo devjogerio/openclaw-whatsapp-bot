@@ -6,6 +6,7 @@ import { proto, downloadMediaMessage } from '@whiskeysockets/baileys';
 import { SkillRegistry } from '../services/SkillRegistry';
 import { DateSkill } from '../skills/DateSkill';
 import { WebSearchSkill } from '../skills/WebSearchSkill';
+import { FileSkill } from '../skills/FileSkill';
 import { IContextManager } from '../interfaces/IContextManager';
 import { InMemoryContextManager } from '../../infrastructure/context/InMemoryContextManager';
 
@@ -39,6 +40,7 @@ export class MessageHandler {
     private registerSkills(): void {
         this.skillRegistry.register(new DateSkill());
         this.skillRegistry.register(new WebSearchSkill());
+        this.skillRegistry.register(new FileSkill());
         // Futuras skills serão registradas aqui
     }
 
