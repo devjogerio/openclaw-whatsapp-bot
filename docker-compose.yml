@@ -2,12 +2,30 @@ version: '3.8'
 
 services:
   app:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
     container_name: openclaw-whatsapp-bot
-    restart: always
+    restart: unless-stopped
+    ports:
+      - "${PORT}:${PORT}"
     volumes:
-      - ./auth_info_baileys:/usr/src/app/auth_info_baileys
+      - whatsapp_session:/usr/src/app/auth_info_baileys
     env_file:
       - .env
-    tty: true # Importante para ver o QR Code no terminal
-    stdin_open: true # Importante para interatividade se necessário
+    networks:
+      - openclaw_network
+    tty: true
+    stdin_open: true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  openclaw_network:
+    driver: bridge
+
+volumes:
+  whatsapp_session:

@@ -6,6 +6,7 @@ import makeWASocket, {
     MessageUpsertType
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
+import * as qrcode from 'qrcode-terminal';
 import { IMessagingClient } from '../../core/interfaces/IMessagingClient';
 import { config } from '../../config/env';
 import { logger } from '../../utils/logger';
@@ -18,7 +19,7 @@ export class BaileysClient implements IMessagingClient {
         const { state, saveCreds } = await useMultiFileAuthState(config.whatsappSessionPath);
 
         this.sock = makeWASocket({
-            printQRInTerminal: true,
+            printQRInTerminal: false,
             auth: state,
             logger: logger as any
         });
@@ -27,6 +28,7 @@ export class BaileysClient implements IMessagingClient {
             const { connection, lastDisconnect, qr } = update;
 
             if (qr) {
+                qrcode.generate(qr, { small: true });
                 logger.info('QR Code recebido, escaneie para conectar.');
             }
 
