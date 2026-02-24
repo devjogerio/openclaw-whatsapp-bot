@@ -28,12 +28,14 @@ O bot possui um sistema extensível de skills que permite interagir com o mundo 
 - **Clean Architecture**: Separação clara entre Core, Infraestrutura e Interfaces.
 - **Whitelist de Usuários**: Apenas números autorizados (configurados no `.env`) podem interagir com o bot.
 - **Contexto de Conversa**: Gerenciamento de histórico em memória (FIFO) para manter a coerência do diálogo.
+- **Microserviços**: Arquitetura desacoplada utilizando containers Docker para o bot, serviço de IA (Ollama) e gateway WhatsApp (WAHA).
 
 ## 🛠 Tecnologias Utilizadas
 
 - **Runtime**: Node.js & TypeScript
-- **AI Core**: OpenAI API (GPT-4o, Whisper, TTS).
-- **Tools**: `pdf-parse`, `duck-duck-scrape`, `dotenv`.
+- **WhatsApp API**: [WAHA (WhatsApp HTTP API)](https://waha.devlike.pro/) (Container Docker dedicado).
+- **AI Core**: Ollama (Llama 3, Mistral) & OpenAI API (Opcional).
+- **Tools**: `pdf-parse`, `duck-duck-scrape`, `dotenv`, `axios`.
 - **Testes**: Jest (Cobertura de testes unitários para Services, Handlers e Skills).
 - **Infraestrutura**: Docker & Docker Compose.
 
@@ -43,24 +45,24 @@ O bot possui um sistema extensível de skills que permite interagir com o mundo 
 src/
 ├── config/           # Configurações globais (env, constants)
 ├── core/
-│   ├── handlers/     # Manipuladores de mensagens e eventos
-│   ├── interfaces/   # Interfaces abstratas (Clean Architecture)
-│   ├── models/       # Modelos de domínio
-│   └── skills/       # Implementação das habilidades (Tools)
+├── handlers/     # Manipuladores de mensagens e eventos
+├── interfaces/   # Interfaces abstratas (Clean Architecture)
+├── models/       # Modelos de domínio
+└── skills/       # Implementação das habilidades (Tools)
 ├── infrastructure/
-│   ├── ai/           # Implementação do serviço de IA (OpenAI)
-│   ├── database/     # (Futuro) Persistência de dados
-│   ├── security/     # Serviços de segurança (Whitelist)
-│   └── whatsapp/     # Cliente Baileys
+├── ai/           # Implementação do serviço de IA (Ollama/OpenAI)
+├── database/     # (Futuro) Persistência de dados
+├── security/     # Serviços de segurança (Whitelist)
+└── whatsapp/     # Cliente WAHA (HTTP API)
 └── utils/            # Utilitários gerais (Logger, Formatters)
+scripts/              # Scripts de automação e monitoramento
 ```
 
 ## ⚙️ Instalação e Configuração
 
 ### Pré-requisitos
 - Node.js v18+
-- Docker & Docker Compose (Opcional, mas recomendado)
-- Uma conta na OpenAI com créditos (API Key).
+- Docker & Docker Compose (Obrigatório para o WAHA)
 
 ### 1. Clonar o Repositório
 ```bash
@@ -77,7 +79,7 @@ cp .env.example .env
 Edite o arquivo `.env`:
 ```ini
 # Servidor
-PORT=3000
+PORT=3002
 NODE_ENV=development
 LOG_LEVEL=info
 
@@ -85,37 +87,59 @@ LOG_LEVEL=info
 OLLAMA_HOST=http://ollama:11434
 OLLAMA_MODEL=llama3
 
-# IA (OpenAI - Opcional)
-# OPENAI_API_KEY=sk-proj-...
-
-# Segurança (Números permitidos - Formato Internacional sem +)
-# Ex: 55 (Brasil) + DDD + Número
-WHITELIST_NUMBERS=5511999999999,5511888888888
-
+# Segurança
+WHITELIST_NUMBERS=5511999999999
 
 # Configuração WAHA
 WAHA_BASE_URL=http://localhost:3000
-WAHA_API_KEY=secret_key
-
-# Áudio (Habilitar resposta em voz)
-AUDIO_RESPONSE_ENABLED=true
+WAHA_API_KEY=sua_chave_secreta
+WAHA_DASHBOARD_USERNAME=admin
+WAHA_DASHBOARD_PASSWORD=admin
+WAHA_WEBHOOK_URL=http://app:3002/webhook
 ```
 
 ### 3. Executar com Docker (Recomendado)
+
+Utilize o script de automação para facilitar o processo:
+
 ```bash
-# Construir e subir os containers
+# Modo de Desenvolvimento (Logs no terminal)
+./scripts/run.sh dev
+
+# Modo de Produção (Background)
+./scripts/run.sh prod
+
+# Parar serviços
+./scripts/run.sh stop
+```
+
+Ou manualmente via Docker Compose:
+
+```bash
 docker-compose up --build -d
-
-# Ver logs (para escanear o QR Code)
-docker-compose logs -f app
 ```
 
-### 4. Executar Localmente (Sem Docker)
+### 4. Configurar o WhatsApp (WAHA Dashboard)
+
+O projeto utiliza o **WAHA (WhatsApp HTTP API)** que fornece um painel de controle visual.
+
+1. Acesse o Dashboard: `http://localhost:3000/dashboard`
+2. Faça login com as credenciais configuradas no `.env` (Padrão: `admin` / `admin`).
+3. Inicie uma sessão chamada `default`.
+4. Escaneie o QR Code com seu celular.
+
+### 5. Monitoramento e Saúde
+
+Para verificar se o WAHA está rodando corretamente e se o dashboard está acessível, execute o script de monitoramento:
+
 ```bash
-npm install
-npm run build
-npm start
+./scripts/monitor_dashboard.sh
 ```
+
+Este script irá:
+- Testar a conexão com a API do WAHA.
+- Validar o acesso ao Dashboard (incluindo autenticação).
+- Listar sessões ativas e status do sistema.
 
 ## 🧪 Testes
 
@@ -130,20 +154,20 @@ npm test
 npm run test:watch
 ```
 
-## � Solução de Problemas Comuns (Troubleshooting)
+## 🐛 Solução de Problemas Comuns (Troubleshooting)
 
-### Erro 429: "You exceeded your current quota" (OpenAI)
-Este erro indica que a chave de API da OpenAI atingiu o limite de uso ou expirou.
-**Solução**: Verifique seus créditos na plataforma OpenAI e gere uma nova chave se necessário.
+### Dashboard inacessível (401 Unauthorized)
+Certifique-se de que as variáveis `WAHA_DASHBOARD_USERNAME` e `WAHA_DASHBOARD_PASSWORD` no `.env` correspondem às configuradas no container WAHA.
 
-### Conexão Falha com WhatsApp (Connection Failure)
-Se o bot não conectar ou ficar reconectando indefinidamente:
-1. Verifique se o QR Code foi gerado no terminal/logs.
-2. Certifique-se de que o dispositivo celular tem acesso à internet.
-3. Se estiver usando Docker, verifique se a rede `openclaw_network` permite saída para a internet.
-4. Reinicie o container para forçar uma nova tentativa de conexão: `docker-compose restart app`.
+### Conflito de Portas
+O projeto está configurado para usar:
+- Porta **3000**: WAHA (Dashboard e API)
+- Porta **3002**: Aplicação Bot (Webhook)
+- Porta **11434**: Ollama
 
-### QR Code não aparece no terminal
-Em ambientes Docker/Headless, o QR Code pode ser impresso nos logs.
-Execute: `docker-compose logs -f app` e aguarde a mensagem "QR Code recebido".
-Se ainda não aparecer, verifique se a variável `printQRInTerminal` está configurada corretamente no código (deve ser `false` para uso com `qrcode-terminal` ou `true` para logs brutos).
+Se houver conflito, ajuste as portas no `.env` e no `docker-compose.yml`.
+
+### Bot não responde
+1. Verifique se o seu número está na `WHITELIST_NUMBERS`.
+2. Verifique os logs da aplicação: `docker-compose logs -f app`.
+3. Certifique-se de que a sessão no WAHA está com status `WORKING`.
