@@ -32,7 +32,6 @@ O bot possui um sistema extensível de skills que permite interagir com o mundo 
 ## 🛠 Tecnologias Utilizadas
 
 - **Runtime**: Node.js & TypeScript
-- **WhatsApp API**: [@whiskeysockets/baileys](https://github.com/WhiskeySockets/Baileys) (Não requer API oficial Business).
 - **AI Core**: OpenAI API (GPT-4o, Whisper, TTS).
 - **Tools**: `pdf-parse`, `duck-duck-scrape`, `dotenv`.
 - **Testes**: Jest (Cobertura de testes unitários para Services, Handlers e Skills).
@@ -94,8 +93,9 @@ OLLAMA_MODEL=llama3
 WHITELIST_NUMBERS=5511999999999,5511888888888
 
 
-# WhatsApp Session (Onde salvar as credenciais)
-WHATSAPP_SESSION_PATH=./auth_info_baileys
+# Configuração WAHA
+WAHA_BASE_URL=http://localhost:3000
+WAHA_API_KEY=secret_key
 
 # Áudio (Habilitar resposta em voz)
 AUDIO_RESPONSE_ENABLED=true
