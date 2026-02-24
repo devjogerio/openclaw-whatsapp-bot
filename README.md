@@ -23,4 +23,3 @@ Permitir que o usuário controle seu computador, gerencie e-mails, arquivos e au
 2. Instale as dependências: `npm install`.
 3. Configure o arquivo `.env`.
 4. Inicie o servidor: `npm run dev`.
- 
