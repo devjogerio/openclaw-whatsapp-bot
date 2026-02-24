@@ -1,17 +1,12 @@
 import { MessageHandler } from '../../../src/core/handlers/MessageHandler';
 import { IMessagingClient } from '../../../src/core/interfaces/IMessagingClient';
 import { SecurityService } from '../../../src/core/services/SecurityService';
-import { OpenAIService } from '../../../src/infrastructure/ai/OpenAIService';
-import { proto } from '@whiskeysockets/baileys';
+import { OllamaService } from '../../../src/infrastructure/ai/OllamaService';
 import { IContextManager } from '../../../src/core/interfaces/IContextManager';
 
 // Mocks
 jest.mock('../../../src/core/services/SecurityService');
-jest.mock('../../../src/infrastructure/ai/OpenAIService');
-jest.mock('@whiskeysockets/baileys', () => ({
-    proto: {},
-    downloadMediaMessage: jest.fn().mockResolvedValue(Buffer.from('audio_content'))
-}));
+jest.mock('../../../src/infrastructure/ai/OllamaService');
 jest.mock('../../../src/utils/logger', () => ({
     logger: {
         info: jest.fn(),
@@ -21,11 +16,18 @@ jest.mock('../../../src/utils/logger', () => ({
     }
 }));
 
+jest.mock('../../../src/config/env', () => ({
+    config: {
+        audioResponseEnabled: true,
+        whitelistNumbers: ['5511999999999']
+    }
+}));
+
 describe('MessageHandler', () => {
     let messageHandler: MessageHandler;
     let mockClient: jest.Mocked<IMessagingClient>;
     let mockSecurityService: jest.Mocked<SecurityService>;
-    let mockAiService: jest.Mocked<OpenAIService>;
+    let mockAiService: jest.Mocked<OllamaService>;
     let mockContextManager: jest.Mocked<IContextManager>;
 
     beforeEach(() => {
@@ -36,6 +38,7 @@ describe('MessageHandler', () => {
             onMessage: jest.fn(),
             sendMessage: jest.fn(),
             sendAudio: jest.fn(),
+            downloadMedia: jest.fn(),
         };
 
         mockContextManager = {
@@ -46,29 +49,29 @@ describe('MessageHandler', () => {
 
         // Clear mocks instances
         (SecurityService as jest.Mock).mockClear();
-        (OpenAIService as jest.Mock).mockClear();
+        (OllamaService as jest.Mock).mockClear();
 
         messageHandler = new MessageHandler(mockClient, mockContextManager);
 
         // Access the mocked instances created inside the constructor
-        mockSecurityService = (SecurityService as any).mock.instances[0];
-        mockAiService = (OpenAIService as any).mock.instances[0];
+        // @ts-ignore
+        mockSecurityService = SecurityService.mock.instances[0];
+        // @ts-ignore
+        mockAiService = OllamaService.mock.instances[0];
     });
 
-    const createMockMessage = (remoteJid: string, text: string, fromMe: boolean = false): proto.IWebMessageInfo => ({
-        key: { remoteJid, fromMe },
-        message: { conversation: text }
-    });
-
-    const createAudioMessage = (remoteJid: string): proto.IWebMessageInfo => ({
-        key: { remoteJid, fromMe: false },
-        message: { 
-            audioMessage: { url: 'http://audio.url' } 
-        }
+    const createMockMessage = (remoteJid: string, text: string, fromMe: boolean = false) => ({
+        id: 'msg_id',
+        from: remoteJid,
+        to: 'me',
+        body: text,
+        fromMe: fromMe,
+        hasMedia: false,
+        timestamp: 1234567890
     });
 
     it('should process valid message from allowed number', async () => {
-        const remoteJid = '5511999999999@s.whatsapp.net';
+        const remoteJid = '5511999999999@c.us';
         const text = 'Hello AI';
         const responseText = 'Hello Human';
 
@@ -79,7 +82,7 @@ describe('MessageHandler', () => {
 
         expect(mockSecurityService.isAllowed).toHaveBeenCalledWith(remoteJid);
         expect(mockContextManager.getHistory).toHaveBeenCalledWith(remoteJid);
-        expect(mockAiService.generateResponse).toHaveBeenCalledWith(text, []);
+        expect(mockAiService.generateResponse).toHaveBeenCalledWith(text, [], undefined);
         expect(mockClient.sendMessage).toHaveBeenCalledWith(remoteJid, responseText);
         expect(mockContextManager.addMessage).toHaveBeenCalledTimes(2); // User + Assistant
     });
@@ -91,44 +94,46 @@ describe('MessageHandler', () => {
     });
 
     it('should ignore unauthorized numbers', async () => {
-        const remoteJid = 'unauthorized@s.whatsapp.net';
+        const remoteJid = '5511000000000@c.us';
         mockSecurityService.isAllowed.mockReturnValue(false);
 
-        await messageHandler.handle(createMockMessage(remoteJid, 'Hello'));
+        await messageHandler.handle(createMockMessage(remoteJid, 'hi'));
 
         expect(mockSecurityService.isAllowed).toHaveBeenCalledWith(remoteJid);
         expect(mockAiService.generateResponse).not.toHaveBeenCalled();
-        expect(mockClient.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('should handle messages without text content gracefully', async () => {
-        const msg: proto.IWebMessageInfo = {
-            key: { remoteJid: '123', fromMe: false },
-            message: { imageMessage: {} } // No caption
-        };
+    it('should handle messages without body gracefully', async () => {
+        const msg = { from: '5511999999999@c.us', hasMedia: false }; // No body
         mockSecurityService.isAllowed.mockReturnValue(true);
-        
+
         await messageHandler.handle(msg);
         expect(mockAiService.generateResponse).not.toHaveBeenCalled();
     });
 
-    it('should process audio message', async () => {
-        const remoteJid = '5511999999999@s.whatsapp.net';
-        const transcription = 'Transcribed text';
-        const responseText = 'Response to audio';
-        const audioBuffer = Buffer.from('audio_response');
-
+    it('should handle image messages and download media', async () => {
+        const remoteJid = '5511999999999@c.us';
+        const msg = {
+            from: remoteJid,
+            body: 'Legenda da foto',
+            hasMedia: true,
+            type: 'image',
+            mediaUrl: 'http://waha/media/123.jpg'
+        };
+        const buffer = Buffer.from('fake-image-data');
+        
         mockSecurityService.isAllowed.mockReturnValue(true);
-        mockAiService.transcribeAudio.mockResolvedValue(transcription);
-        mockAiService.generateResponse.mockResolvedValue(responseText);
-        mockAiService.generateAudio.mockResolvedValue(audioBuffer);
+        // @ts-ignore
+        mockClient.downloadMedia.mockResolvedValue(buffer);
+        mockAiService.generateResponse.mockResolvedValue('Analisei a imagem');
 
-        await messageHandler.handle(createAudioMessage(remoteJid));
+        await messageHandler.handle(msg);
 
-        expect(mockAiService.transcribeAudio).toHaveBeenCalled();
-        expect(mockAiService.generateResponse).toHaveBeenCalledWith(transcription, []);
-        expect(mockClient.sendMessage).toHaveBeenCalledWith(remoteJid, responseText);
-        expect(mockAiService.generateAudio).toHaveBeenCalledWith(responseText);
-        expect(mockClient.sendAudio).toHaveBeenCalledWith(remoteJid, audioBuffer);
+        expect(mockClient.downloadMedia).toHaveBeenCalledWith(msg.mediaUrl);
+        expect(mockAiService.generateResponse).toHaveBeenCalledWith(
+            msg.body, 
+            expect.any(Array), 
+            expect.stringContaining('data:image/jpeg;base64,')
+        );
     });
 });

@@ -1,19 +1,27 @@
 import { FileSkill } from '../../../src/core/skills/FileSkill';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import pdf = require('pdf-parse');
 
 // Mock fs/promises
-jest.mock('fs/promises');
+jest.mock('fs/promises', () => ({
+    stat: jest.fn(),
+    readdir: jest.fn(),
+    readFile: jest.fn()
+}));
+
+// Mock pdf-parse
+jest.mock('pdf-parse', () => jest.fn());
 
 describe('FileSkill', () => {
     let skill: FileSkill;
     const mockCwd = '/project';
     // Cast mocked fs to jest.Mocked<typeof fs>
-    const mockFs = fs as jest.Mocked<typeof fs>;
+    const mockFs = fs as unknown as jest.Mocked<typeof fs>;
+    const mockPdf = pdf as unknown as jest.Mock;
 
     beforeEach(() => {
-        // Reset modules to ensure clean mocks
-        jest.resetModules();
+        jest.clearAllMocks();
         
         // Mock process.cwd() BEFORE instantiating FileSkill if FileSkill uses it in constructor/properties
         // In our implementation, FileSkill uses process.cwd() inside execute(), so mocking it here is fine.
@@ -22,9 +30,6 @@ describe('FileSkill', () => {
         jest.spyOn(process, 'cwd').mockReturnValue(mockCwd);
 
         skill = new FileSkill();
-        
-        // Clear previous calls
-        jest.clearAllMocks();
     });
 
     afterEach(() => {
@@ -98,12 +103,35 @@ describe('FileSkill', () => {
     it('should handle list on file gracefully', async () => {
         const filePath = 'file.ts';
         const absolutePath = path.resolve(mockCwd, filePath);
-
-        mockFs.stat.mockResolvedValue({ isDirectory: () => false } as any);
+        
+        (fs.stat as jest.Mock).mockResolvedValue({ isDirectory: () => false });
 
         const result = await skill.execute({ action: 'list', path: filePath });
-
-        expect(mockFs.stat).toHaveBeenCalledWith(absolutePath);
+        
+        expect(fs.stat).toHaveBeenCalledWith(absolutePath);
         expect(result).toContain('não é um diretório');
+    });
+
+    it('should read PDF file content', async () => {
+        const filePath = 'document.pdf';
+        const absolutePath = path.resolve(mockCwd, filePath);
+        const pdfContent = 'PDF Text Content';
+        const pdfBuffer = Buffer.from('PDF Binary Data');
+
+        (fs.stat as jest.Mock).mockResolvedValue({ isFile: () => true });
+        (fs.readFile as jest.Mock).mockImplementation((path) => {
+            if (path === absolutePath) return Promise.resolve(pdfBuffer);
+            return Promise.reject(new Error('File not found'));
+        });
+
+        // Mock pdf-parse
+        (pdf as unknown as jest.Mock).mockResolvedValue({ text: pdfContent });
+
+        const result = await skill.execute({ action: 'read', path: filePath });
+
+        expect(fs.stat).toHaveBeenCalledWith(absolutePath);
+        expect(fs.readFile).toHaveBeenCalledWith(absolutePath); // Called without encoding for PDF
+        expect(pdf).toHaveBeenCalledWith(pdfBuffer);
+        expect(result).toContain(pdfContent);
     });
 });

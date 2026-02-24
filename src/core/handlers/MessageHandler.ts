@@ -1,22 +1,25 @@
 import { IMessagingClient } from '../interfaces/IMessagingClient';
 import { SecurityService } from '../services/SecurityService';
-import { OpenAIService } from '../../infrastructure/ai/OpenAIService';
+import { OllamaService } from '../../infrastructure/ai/OllamaService';
+import { IAIService } from '../interfaces/IAIService';
 import { logger } from '../../utils/logger';
-import { proto, downloadMediaMessage } from '@whiskeysockets/baileys';
 import { SkillRegistry } from '../services/SkillRegistry';
 import { DateSkill } from '../skills/DateSkill';
 import { WebSearchSkill } from '../skills/WebSearchSkill';
 import { FileSkill } from '../skills/FileSkill';
+import { CommandSkill } from '../skills/CommandSkill';
 import { IContextManager } from '../interfaces/IContextManager';
 import { InMemoryContextManager } from '../../infrastructure/context/InMemoryContextManager';
+import { config } from '../../config/env';
+import axios from 'axios';
 
 /**
  * Orquestrador central de mensagens.
- * Recebe mensagens do cliente, valida segurança e encaminha para IA.
+ * Recebe mensagens do cliente (WAHA), valida segurança e encaminha para IA.
  */
 export class MessageHandler {
     private securityService: SecurityService;
-    private aiService: OpenAIService;
+    private aiService: IAIService;
     private client: IMessagingClient;
     private skillRegistry: SkillRegistry;
     private contextManager: IContextManager;
@@ -30,8 +33,8 @@ export class MessageHandler {
         this.skillRegistry = new SkillRegistry();
         this.registerSkills();
 
-        // Injeta registro de skills no serviço de IA
-        this.aiService = new OpenAIService(this.skillRegistry);
+        // Injeta registro de skills no serviço de IA (Agora usando Ollama)
+        this.aiService = new OllamaService(this.skillRegistry);
     }
 
     /**
@@ -41,19 +44,26 @@ export class MessageHandler {
         this.skillRegistry.register(new DateSkill());
         this.skillRegistry.register(new WebSearchSkill());
         this.skillRegistry.register(new FileSkill());
+        this.skillRegistry.register(new CommandSkill());
         // Futuras skills serão registradas aqui
     }
 
     /**
      * Processa uma mensagem recebida.
-     * @param message Objeto de mensagem do Baileys.
+     * @param message Payload de mensagem do WAHA.
      */
-    public async handle(message: proto.IWebMessageInfo): Promise<void> {
+    public async handle(message: any): Promise<void> {
         try {
-            // Ignora mensagens enviadas pelo próprio bot ou sem remoteJid
-            if (message.key.fromMe || !message.key.remoteJid) return;
+            // Verifica estrutura básica
+            if (!message.from || !message.body) {
+                // Mensagens de sistema ou status podem não ter body
+                return;
+            }
 
-            const remoteJid = message.key.remoteJid;
+            // Ignora mensagens enviadas pelo próprio bot
+            if (message.fromMe) return;
+
+            const remoteJid = message.from;
             
             // 1. Validação de Segurança (Whitelist)
             if (!this.securityService.isAllowed(remoteJid)) {
@@ -61,36 +71,43 @@ export class MessageHandler {
                 return;
             }
 
-            let text = message.message?.conversation || 
-                       message.message?.extendedTextMessage?.text || 
-                       message.message?.imageMessage?.caption ||
-                       '';
+            let text = message.body;
+            let imageUrl: string | undefined;
 
-            // Tratamento de Áudio
-            const audioMessage = message.message?.audioMessage;
-            if (audioMessage) {
-                logger.info(`[${remoteJid}] Áudio recebido. Iniciando download e transcrição...`);
-                try {
-                    const buffer = await downloadMediaMessage(
-                        message,
-                        'buffer',
-                        { },
-                        { 
-                            logger: logger as any, // Cast necessário pois pino != Baileys logger
-                            reuploadRequest: async () => { return new Promise(() => {}) } // Mock simples
-                        } 
-                    );
-                    
-                    text = await this.aiService.transcribeAudio(buffer as Buffer);
-                    logger.info(`[${remoteJid}] Texto transcrito: "${text}"`);
-                } catch (err) {
-                    logger.error(err, 'Falha ao processar áudio');
-                    await this.client.sendMessage(remoteJid, 'Desculpe, não consegui ouvir seu áudio.');
-                    return;
+            if (message.hasMedia) {
+                logger.info(`[${remoteJid}] Mensagem com mídia recebida. Tipo: ${message.type}`);
+                
+                // Tenta baixar a mídia se houver URL e o cliente suportar
+                if (message.mediaUrl && this.client.downloadMedia) {
+                    try {
+                        logger.info(`[${remoteJid}] Baixando mídia de: ${message.mediaUrl}`);
+                        const buffer = await this.client.downloadMedia(message.mediaUrl);
+                        
+                        if (message.type === 'image') {
+                            const base64Media = buffer.toString('base64');
+                            // Assume JPEG por padrão para simplificar, mas ideal seria detectar mime-type
+                            imageUrl = `data:image/jpeg;base64,${base64Media}`;
+                            logger.info(`[${remoteJid}] Imagem processada para envio à IA.`);
+                        } else if (message.type === 'ptt' || message.type === 'audio') {
+                            logger.info(`[${remoteJid}] Áudio recebido (${buffer.length} bytes). Transcrição ainda não implementada.`);
+                            await this.client.sendMessage(remoteJid, 'Recebi seu áudio. O sistema de transcrição está em desenvolvimento.');
+                            return;
+                        }
+                    } catch (err) {
+                        logger.error(`[${remoteJid}] Falha ao baixar mídia: ${err}`);
+                        await this.client.sendMessage(remoteJid, 'Tive um problema ao baixar a mídia que você enviou.');
+                        return;
+                    }
+                } else {
+                    logger.warn(`[${remoteJid}] Mídia recebida sem URL de download ou suporte do cliente.`);
+                    if (message.type === 'ptt' || message.type === 'audio') {
+                         await this.client.sendMessage(remoteJid, 'Recebi um áudio, mas não consegui processá-lo.');
+                         return;
+                    }
                 }
             }
 
-            if (!text) {
+            if (!text && !message.hasMedia) {
                 logger.debug(`Mensagem sem conteúdo processável recebida de ${remoteJid}`);
                 return;
             }
@@ -103,25 +120,21 @@ export class MessageHandler {
             logger.info(`[AI] Contexto recuperado para ${remoteJid}: ${history.length} mensagens.`);
 
             logger.info(`[AI] Gerando resposta para ${remoteJid}...`);
-            const response = await this.aiService.generateResponse(text, history);
+            const response = await this.aiService.generateResponse(text, history, imageUrl);
 
             // Salva a interação no histórico
-            await this.contextManager.addMessage(remoteJid, { role: 'user', content: text });
+            const userContent = imageUrl ? `[Imagem enviada] ${text}` : text;
+            await this.contextManager.addMessage(remoteJid, { role: 'user', content: userContent });
             await this.contextManager.addMessage(remoteJid, { role: 'assistant', content: response });
 
             // 3. Envio da Resposta
             await this.client.sendMessage(remoteJid, response);
             logger.info(`[AI] Resposta enviada para ${remoteJid}`);
 
-            // Enviar áudio de volta se a mensagem original foi áudio
-            if (audioMessage) {
-                try {
-                    const audioResponse = await this.aiService.generateAudio(response);
-                    await this.client.sendAudio(remoteJid, audioResponse);
-                    logger.info(`[AI] Áudio de resposta enviado para ${remoteJid}`);
-                } catch (error) {
-                    logger.error(error, 'Erro ao gerar/enviar áudio de resposta');
-                }
+            // Enviar áudio de volta se a mensagem original foi áudio e estiver habilitado
+            // (Requer implementação de envio de áudio no WahaClient e detecção de tipo de msg)
+            if ((message.type === 'ptt' || message.type === 'audio') && config.audioResponseEnabled) {
+                 // Pendente: Implementar lógica de áudio reverso com WAHA
             }
 
         } catch (error) {
