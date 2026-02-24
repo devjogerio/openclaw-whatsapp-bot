@@ -1,14 +1,14 @@
-import { BaileysClient } from './infrastructure/whatsapp/BaileysClient';
+import { WahaClient } from './infrastructure/whatsapp/WahaClient';
 import { MessageHandler } from './core/handlers/MessageHandler';
 import { logger } from './utils/logger';
 import { config } from './config/env';
 
 async function bootstrap() {
     try {
-        logger.info('Iniciando OpenClaw WhatsApp Bot...');
+        logger.info('Iniciando OpenClaw WhatsApp Bot (via WAHA)...');
         
-        // Inicializa o Cliente WhatsApp
-        const whatsappClient = new BaileysClient();
+        // Inicializa o Cliente WhatsApp (WAHA)
+        const whatsappClient = new WahaClient();
         
         // Inicializa o Handler de Mensagens
         const messageHandler = new MessageHandler(whatsappClient);
@@ -16,7 +16,7 @@ async function bootstrap() {
         // Conecta o handler ao evento de mensagem
         whatsappClient.onMessage((msg) => messageHandler.handle(msg));
 
-        // Inicia a conexão
+        // Inicia o servidor de Webhook
         await whatsappClient.connect();
         
         logger.info(`Sistema iniciado em ambiente: ${config.nodeEnv}`);

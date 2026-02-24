@@ -25,9 +25,6 @@ RUN npm ci --only=production
 # Copy built artifacts from builder stage
 COPY --from=builder /usr/src/app/dist ./dist
 
-# Create directory for auth credentials and ensure permissions
-RUN mkdir -p auth_info_baileys && chown -R node:node auth_info_baileys
-
 # Switch to non-root user
 USER node
 

@@ -3,7 +3,6 @@ import { SecurityService } from '../services/SecurityService';
 import { OllamaService } from '../../infrastructure/ai/OllamaService';
 import { IAIService } from '../interfaces/IAIService';
 import { logger } from '../../utils/logger';
-import { proto, downloadMediaMessage } from '@whiskeysockets/baileys';
 import { SkillRegistry } from '../services/SkillRegistry';
 import { DateSkill } from '../skills/DateSkill';
 import { WebSearchSkill } from '../skills/WebSearchSkill';
@@ -12,10 +11,11 @@ import { CommandSkill } from '../skills/CommandSkill';
 import { IContextManager } from '../interfaces/IContextManager';
 import { InMemoryContextManager } from '../../infrastructure/context/InMemoryContextManager';
 import { config } from '../../config/env';
+import axios from 'axios';
 
 /**
  * Orquestrador central de mensagens.
- * Recebe mensagens do cliente, valida segurança e encaminha para IA.
+ * Recebe mensagens do cliente (WAHA), valida segurança e encaminha para IA.
  */
 export class MessageHandler {
     private securityService: SecurityService;
@@ -50,14 +50,20 @@ export class MessageHandler {
 
     /**
      * Processa uma mensagem recebida.
-     * @param message Objeto de mensagem do Baileys.
+     * @param message Payload de mensagem do WAHA.
      */
-    public async handle(message: proto.IWebMessageInfo): Promise<void> {
+    public async handle(message: any): Promise<void> {
         try {
-            // Ignora mensagens enviadas pelo próprio bot ou sem remoteJid
-            if (message.key.fromMe || !message.key.remoteJid) return;
+            // Verifica estrutura básica
+            if (!message.from || !message.body) {
+                // Mensagens de sistema ou status podem não ter body
+                return;
+            }
 
-            const remoteJid = message.key.remoteJid;
+            // Ignora mensagens enviadas pelo próprio bot
+            if (message.fromMe) return;
+
+            const remoteJid = message.from;
             
             // 1. Validação de Segurança (Whitelist)
             if (!this.securityService.isAllowed(remoteJid)) {
@@ -65,69 +71,43 @@ export class MessageHandler {
                 return;
             }
 
-            let text = message.message?.conversation || 
-                       message.message?.extendedTextMessage?.text || 
-                       message.message?.imageMessage?.caption ||
-                       '';
-
-            // Tratamento de Imagem
-            const imageMessage = message.message?.imageMessage;
+            let text = message.body;
             let imageUrl: string | undefined;
 
-            if (imageMessage) {
-                logger.info(`[${remoteJid}] Imagem recebida. Iniciando download...`);
-                try {
-                    const buffer = await downloadMediaMessage(
-                        message,
-                        'buffer',
-                        { },
-                        { 
-                            logger: logger as any,
-                            reuploadRequest: async () => { return new Promise(() => {}) }
+            if (message.hasMedia) {
+                logger.info(`[${remoteJid}] Mensagem com mídia recebida. Tipo: ${message.type}`);
+                
+                // Tenta baixar a mídia se houver URL e o cliente suportar
+                if (message.mediaUrl && this.client.downloadMedia) {
+                    try {
+                        logger.info(`[${remoteJid}] Baixando mídia de: ${message.mediaUrl}`);
+                        const buffer = await this.client.downloadMedia(message.mediaUrl);
+                        
+                        if (message.type === 'image') {
+                            const base64Media = buffer.toString('base64');
+                            // Assume JPEG por padrão para simplificar, mas ideal seria detectar mime-type
+                            imageUrl = `data:image/jpeg;base64,${base64Media}`;
+                            logger.info(`[${remoteJid}] Imagem processada para envio à IA.`);
+                        } else if (message.type === 'ptt' || message.type === 'audio') {
+                            logger.info(`[${remoteJid}] Áudio recebido (${buffer.length} bytes). Transcrição ainda não implementada.`);
+                            await this.client.sendMessage(remoteJid, 'Recebi seu áudio. O sistema de transcrição está em desenvolvimento.');
+                            return;
                         }
-                    );
-                    
-                    const base64Image = (buffer as Buffer).toString('base64');
-                    const mimeType = imageMessage.mimetype || 'image/jpeg';
-                    imageUrl = `data:${mimeType};base64,${base64Image}`;
-                    
-                    if (!text) {
-                        text = "O que você vê nesta imagem?"; // Prompt padrão se vier sem legenda
+                    } catch (err) {
+                        logger.error(`[${remoteJid}] Falha ao baixar mídia: ${err}`);
+                        await this.client.sendMessage(remoteJid, 'Tive um problema ao baixar a mídia que você enviou.');
+                        return;
                     }
-                    
-                    logger.info(`[${remoteJid}] Imagem processada com sucesso.`);
-                } catch (err) {
-                    logger.error(err, 'Falha ao processar imagem');
-                    await this.client.sendMessage(remoteJid, 'Desculpe, não consegui processar sua imagem.');
-                    return;
+                } else {
+                    logger.warn(`[${remoteJid}] Mídia recebida sem URL de download ou suporte do cliente.`);
+                    if (message.type === 'ptt' || message.type === 'audio') {
+                         await this.client.sendMessage(remoteJid, 'Recebi um áudio, mas não consegui processá-lo.');
+                         return;
+                    }
                 }
             }
 
-            // Tratamento de Áudio
-            const audioMessage = message.message?.audioMessage;
-            if (audioMessage) {
-                logger.info(`[${remoteJid}] Áudio recebido. Iniciando download e transcrição...`);
-                try {
-                    const buffer = await downloadMediaMessage(
-                        message,
-                        'buffer',
-                        { },
-                        { 
-                            logger: logger as any, // Cast necessário pois pino != Baileys logger
-                            reuploadRequest: async () => { return new Promise(() => {}) } // Mock simples
-                        } 
-                    );
-                    
-                    text = await this.aiService.transcribeAudio(buffer as Buffer);
-                    logger.info(`[${remoteJid}] Texto transcrito: "${text}"`);
-                } catch (err) {
-                    logger.error(err, 'Falha ao processar áudio');
-                    await this.client.sendMessage(remoteJid, 'Desculpe, não consegui ouvir seu áudio.');
-                    return;
-                }
-            }
-
-            if (!text) {
+            if (!text && !message.hasMedia) {
                 logger.debug(`Mensagem sem conteúdo processável recebida de ${remoteJid}`);
                 return;
             }
@@ -143,7 +123,6 @@ export class MessageHandler {
             const response = await this.aiService.generateResponse(text, history, imageUrl);
 
             // Salva a interação no histórico
-            // Se foi uma imagem, salva uma indicação no histórico para contexto futuro (sem salvar o base64 para economizar espaço)
             const userContent = imageUrl ? `[Imagem enviada] ${text}` : text;
             await this.contextManager.addMessage(remoteJid, { role: 'user', content: userContent });
             await this.contextManager.addMessage(remoteJid, { role: 'assistant', content: response });
@@ -153,14 +132,9 @@ export class MessageHandler {
             logger.info(`[AI] Resposta enviada para ${remoteJid}`);
 
             // Enviar áudio de volta se a mensagem original foi áudio e estiver habilitado
-            if (audioMessage && config.audioResponseEnabled) {
-                try {
-                    const audioResponse = await this.aiService.generateAudio(response);
-                    await this.client.sendAudio(remoteJid, audioResponse);
-                    logger.info(`[AI] Áudio de resposta enviado para ${remoteJid}`);
-                } catch (error) {
-                    logger.error(error, 'Erro ao gerar/enviar áudio de resposta');
-                }
+            // (Requer implementação de envio de áudio no WahaClient e detecção de tipo de msg)
+            if ((message.type === 'ptt' || message.type === 'audio') && config.audioResponseEnabled) {
+                 // Pendente: Implementar lógica de áudio reverso com WAHA
             }
 
         } catch (error) {
