@@ -8,6 +8,8 @@ export const config = {
     whatsappSessionPath: process.env.WHATSAPP_SESSION_PATH || './auth_info_baileys',
     openaiApiKey: process.env.OPENAI_API_KEY,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+    ollamaHost: process.env.OLLAMA_HOST || 'http://localhost:11434',
+    ollamaModel: process.env.OLLAMA_MODEL || 'llama3',
     whitelistNumbers: process.env.WHITELIST_NUMBERS ? process.env.WHITELIST_NUMBERS.split(',') : [],
     audioResponseEnabled: process.env.AUDIO_RESPONSE_ENABLED === 'true',
 };
