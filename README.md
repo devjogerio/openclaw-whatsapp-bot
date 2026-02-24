@@ -100,45 +100,44 @@ AUDIO_RESPONSE_ENABLED=true
 # Construir e subir os containers
 docker-compose up --build -d
 
-# Acompanhar os logs para escanear o QR Code
+# Ver logs (para escanear o QR Code)
 docker-compose logs -f app
 ```
 
-### 4. Executar Localmente (Desenvolvimento)
+### 4. Executar Localmente (Sem Docker)
 ```bash
-# Instalar dependências
 npm install
-
-# Rodar em modo de desenvolvimento
-npm run dev
-
-# Rodar testes
-npm test
+npm run build
+npm start
 ```
 
-## 📱 Como Usar
+## 🧪 Testes
 
-1. Ao iniciar, o terminal exibirá um **QR Code**.
-2. Abra o WhatsApp no seu celular, vá em **Aparelhos Conectados** > **Conectar um aparelho**.
-3. Escaneie o QR Code.
-4. Envie mensagens para o bot a partir de um número autorizado na Whitelist.
+O projeto possui testes unitários e de integração cobrindo os principais fluxos.
+Para executar os testes:
 
-### Exemplos de Comandos
-- **Texto**: "Crie um resumo sobre a Revolução Industrial."
-- **Imagem**: Envie uma foto e pergunte "O que você vê nesta imagem?" ou "Transcreva o texto desta foto."
-- **Arquivos**: Envie um PDF e peça "Resuma este documento."
-- **Busca Web**: "Pesquise o preço atual do Bitcoin."
-- **Terminal**: "Liste os arquivos do diretório atual." (Se permitido na whitelist de comandos).
-- **Áudio**: Envie uma mensagem de voz; o bot ouvirá e responderá (em texto ou áudio, conforme config).
+```bash
+# Executar todos os testes
+npm test
 
-## 🤝 Contribuição
+# Executar testes em modo watch
+npm run test:watch
+```
 
-1. Faça um Fork do projeto.
-2. Crie uma Branch para sua Feature (`git checkout -b feat/AmazingFeature`).
-3. Commit suas mudanças (`git commit -m 'feat: Add some AmazingFeature'`).
-4. Push para a Branch (`git push origin feat/AmazingFeature`).
-5. Abra um Pull Request.
+## � Solução de Problemas Comuns (Troubleshooting)
 
-## 📄 Licença
+### Erro 429: "You exceeded your current quota" (OpenAI)
+Este erro indica que a chave de API da OpenAI atingiu o limite de uso ou expirou.
+**Solução**: Verifique seus créditos na plataforma OpenAI e gere uma nova chave se necessário.
 
-Distribuído sob a licença ISC. Veja `LICENSE` para mais informações.
+### Conexão Falha com WhatsApp (Connection Failure)
+Se o bot não conectar ou ficar reconectando indefinidamente:
+1. Verifique se o QR Code foi gerado no terminal/logs.
+2. Certifique-se de que o dispositivo celular tem acesso à internet.
+3. Se estiver usando Docker, verifique se a rede `openclaw_network` permite saída para a internet.
+4. Reinicie o container para forçar uma nova tentativa de conexão: `docker-compose restart app`.
+
+### QR Code não aparece no terminal
+Em ambientes Docker/Headless, o QR Code pode ser impresso nos logs.
+Execute: `docker-compose logs -f app` e aguarde a mensagem "QR Code recebido".
+Se ainda não aparecer, verifique se a variável `printQRInTerminal` está configurada corretamente no código (deve ser `false` para uso com `qrcode-terminal` ou `true` para logs brutos).
