@@ -7,8 +7,10 @@ import { SkillRegistry } from '../services/SkillRegistry';
 import { DateSkill } from '../skills/DateSkill';
 import { WebSearchSkill } from '../skills/WebSearchSkill';
 import { FileSkill } from '../skills/FileSkill';
+import { CommandSkill } from '../skills/CommandSkill';
 import { IContextManager } from '../interfaces/IContextManager';
 import { InMemoryContextManager } from '../../infrastructure/context/InMemoryContextManager';
+import { config } from '../../config/env';
 
 /**
  * Orquestrador central de mensagens.
@@ -41,6 +43,7 @@ export class MessageHandler {
         this.skillRegistry.register(new DateSkill());
         this.skillRegistry.register(new WebSearchSkill());
         this.skillRegistry.register(new FileSkill());
+        this.skillRegistry.register(new CommandSkill());
         // Futuras skills serão registradas aqui
     }
 
@@ -65,6 +68,39 @@ export class MessageHandler {
                        message.message?.extendedTextMessage?.text || 
                        message.message?.imageMessage?.caption ||
                        '';
+
+            // Tratamento de Imagem
+            const imageMessage = message.message?.imageMessage;
+            let imageUrl: string | undefined;
+
+            if (imageMessage) {
+                logger.info(`[${remoteJid}] Imagem recebida. Iniciando download...`);
+                try {
+                    const buffer = await downloadMediaMessage(
+                        message,
+                        'buffer',
+                        { },
+                        { 
+                            logger: logger as any,
+                            reuploadRequest: async () => { return new Promise(() => {}) }
+                        }
+                    );
+                    
+                    const base64Image = (buffer as Buffer).toString('base64');
+                    const mimeType = imageMessage.mimetype || 'image/jpeg';
+                    imageUrl = `data:${mimeType};base64,${base64Image}`;
+                    
+                    if (!text) {
+                        text = "O que você vê nesta imagem?"; // Prompt padrão se vier sem legenda
+                    }
+                    
+                    logger.info(`[${remoteJid}] Imagem processada com sucesso.`);
+                } catch (err) {
+                    logger.error(err, 'Falha ao processar imagem');
+                    await this.client.sendMessage(remoteJid, 'Desculpe, não consegui processar sua imagem.');
+                    return;
+                }
+            }
 
             // Tratamento de Áudio
             const audioMessage = message.message?.audioMessage;
@@ -103,18 +139,20 @@ export class MessageHandler {
             logger.info(`[AI] Contexto recuperado para ${remoteJid}: ${history.length} mensagens.`);
 
             logger.info(`[AI] Gerando resposta para ${remoteJid}...`);
-            const response = await this.aiService.generateResponse(text, history);
+            const response = await this.aiService.generateResponse(text, history, imageUrl);
 
             // Salva a interação no histórico
-            await this.contextManager.addMessage(remoteJid, { role: 'user', content: text });
+            // Se foi uma imagem, salva uma indicação no histórico para contexto futuro (sem salvar o base64 para economizar espaço)
+            const userContent = imageUrl ? `[Imagem enviada] ${text}` : text;
+            await this.contextManager.addMessage(remoteJid, { role: 'user', content: userContent });
             await this.contextManager.addMessage(remoteJid, { role: 'assistant', content: response });
 
             // 3. Envio da Resposta
             await this.client.sendMessage(remoteJid, response);
             logger.info(`[AI] Resposta enviada para ${remoteJid}`);
 
-            // Enviar áudio de volta se a mensagem original foi áudio
-            if (audioMessage) {
+            // Enviar áudio de volta se a mensagem original foi áudio e estiver habilitado
+            if (audioMessage && config.audioResponseEnabled) {
                 try {
                     const audioResponse = await this.aiService.generateAudio(response);
                     await this.client.sendAudio(remoteJid, audioResponse);

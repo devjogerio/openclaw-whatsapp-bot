@@ -18,26 +18,44 @@ export class OpenAIService implements IAIService {
             logger.warn('OPENAI_API_KEY não configurada. O serviço de IA pode falhar.');
         }
         this.openai = new OpenAI({ apiKey: config.openaiApiKey });
-        this.model = 'gpt-4-turbo-preview';
+        this.model = 'gpt-4o'; // Usando GPT-4o para melhor performance e suporte a visão
         this.skillRegistry = skillRegistry;
     }
 
     /**
      * Gera resposta utilizando o modelo GPT da OpenAI.
      */
-    async generateResponse(prompt: string, context: ChatMessage[] = []): Promise<string> {
+    async generateResponse(prompt: string, context: ChatMessage[] = [], imageUrl?: string): Promise<string> {
         try {
+            // Constrói a mensagem do usuário
+            let userMessageContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] | string = prompt;
+
+            if (imageUrl) {
+                userMessageContent = [
+                    { type: 'text', text: prompt },
+                    {
+                        type: 'image_url',
+                        image_url: {
+                            url: imageUrl, // Deve ser uma URL pública ou base64 data URI (data:image/jpeg;base64,...)
+                        },
+                    },
+                ];
+            }
+
             const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
                 { 
                     role: 'system', 
-                    content: 'Você é OpenClaw, um assistente virtual avançado, autônomo e eficiente. Responda de forma direta e útil. Use as ferramentas disponíveis quando necessário.' 
+                    content: 'Você é OpenClaw, um assistente virtual avançado, autônomo e eficiente. Responda de forma direta e útil. Use as ferramentas disponíveis quando necessário. Para imagens, descreva o que vê e responda à pergunta do usuário.' 
                 },
                 ...context.map(msg => ({
                     role: msg.role as 'system' | 'user' | 'assistant' | 'function',
                     content: msg.content,
                     name: msg.name
                 } as OpenAI.Chat.Completions.ChatCompletionMessageParam)),
-                { role: 'user', content: prompt }
+                { 
+                    role: 'user', 
+                    content: userMessageContent as any 
+                }
             ];
 
             const tools = this.skillRegistry?.getToolsDefinition();

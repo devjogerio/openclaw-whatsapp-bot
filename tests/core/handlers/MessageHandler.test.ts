@@ -21,6 +21,13 @@ jest.mock('../../../src/utils/logger', () => ({
     }
 }));
 
+jest.mock('../../../src/config/env', () => ({
+    config: {
+        audioResponseEnabled: true,
+        whitelistNumbers: ['5511999999999']
+    }
+}));
+
 describe('MessageHandler', () => {
     let messageHandler: MessageHandler;
     let mockClient: jest.Mocked<IMessagingClient>;
@@ -79,7 +86,7 @@ describe('MessageHandler', () => {
 
         expect(mockSecurityService.isAllowed).toHaveBeenCalledWith(remoteJid);
         expect(mockContextManager.getHistory).toHaveBeenCalledWith(remoteJid);
-        expect(mockAiService.generateResponse).toHaveBeenCalledWith(text, []);
+        expect(mockAiService.generateResponse).toHaveBeenCalledWith(text, [], undefined);
         expect(mockClient.sendMessage).toHaveBeenCalledWith(remoteJid, responseText);
         expect(mockContextManager.addMessage).toHaveBeenCalledTimes(2); // User + Assistant
     });
@@ -101,10 +108,10 @@ describe('MessageHandler', () => {
         expect(mockClient.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('should handle messages without text content gracefully', async () => {
+    it('should handle truly empty/unsupported messages gracefully', async () => {
         const msg: proto.IWebMessageInfo = {
             key: { remoteJid: '123', fromMe: false },
-            message: { imageMessage: {} } // No caption
+            message: { stickerMessage: {} } // Unsupported type
         };
         mockSecurityService.isAllowed.mockReturnValue(true);
         
@@ -126,9 +133,71 @@ describe('MessageHandler', () => {
         await messageHandler.handle(createAudioMessage(remoteJid));
 
         expect(mockAiService.transcribeAudio).toHaveBeenCalled();
-        expect(mockAiService.generateResponse).toHaveBeenCalledWith(transcription, []);
+        expect(mockAiService.generateResponse).toHaveBeenCalledWith(transcription, [], undefined);
         expect(mockClient.sendMessage).toHaveBeenCalledWith(remoteJid, responseText);
         expect(mockAiService.generateAudio).toHaveBeenCalledWith(responseText);
         expect(mockClient.sendAudio).toHaveBeenCalledWith(remoteJid, audioBuffer);
+    });
+
+    it('should process image message', async () => {
+        const remoteJid = '5511999999999@s.whatsapp.net';
+        const imageBuffer = Buffer.from('image_content');
+        const base64Image = imageBuffer.toString('base64');
+        const expectedImageUrl = `data:image/jpeg;base64,${base64Image}`;
+        const caption = 'Analyze this';
+        const responseText = 'Image Analysis';
+
+        const msg: proto.IWebMessageInfo = {
+            key: { remoteJid, fromMe: false },
+            message: { 
+                imageMessage: { 
+                    caption: caption,
+                    mimetype: 'image/jpeg'
+                } 
+            }
+        };
+
+        // Mock downloadMediaMessage for this test case specifically if needed, 
+        // but the global mock returns 'audio_content'. Let's override or assume it returns buffer.
+        const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+        (downloadMediaMessage as jest.Mock).mockResolvedValue(imageBuffer);
+
+        mockSecurityService.isAllowed.mockReturnValue(true);
+        mockAiService.generateResponse.mockResolvedValue(responseText);
+
+        await messageHandler.handle(msg);
+
+        expect(downloadMediaMessage).toHaveBeenCalled();
+        expect(mockAiService.generateResponse).toHaveBeenCalledWith(caption, [], expectedImageUrl);
+        expect(mockClient.sendMessage).toHaveBeenCalledWith(remoteJid, responseText);
+    });
+
+    it('should process image message without caption using default prompt', async () => {
+        const remoteJid = '5511999999999@s.whatsapp.net';
+        const imageBuffer = Buffer.from('image_content');
+        const base64Image = imageBuffer.toString('base64');
+        const expectedImageUrl = `data:image/jpeg;base64,${base64Image}`;
+        const defaultPrompt = "O que você vê nesta imagem?";
+        const responseText = 'Image Description';
+
+        const msg: proto.IWebMessageInfo = {
+            key: { remoteJid, fromMe: false },
+            message: { 
+                imageMessage: { 
+                    mimetype: 'image/jpeg'
+                } 
+            }
+        };
+
+        const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+        (downloadMediaMessage as jest.Mock).mockResolvedValue(imageBuffer);
+
+        mockSecurityService.isAllowed.mockReturnValue(true);
+        mockAiService.generateResponse.mockResolvedValue(responseText);
+
+        await messageHandler.handle(msg);
+
+        expect(mockAiService.generateResponse).toHaveBeenCalledWith(defaultPrompt, [], expectedImageUrl);
+        expect(mockClient.sendMessage).toHaveBeenCalledWith(remoteJid, responseText);
     });
 });

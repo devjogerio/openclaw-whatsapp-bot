@@ -2,10 +2,11 @@ import { ISkill } from '../interfaces/ISkill';
 import { logger } from '../../utils/logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import pdf = require('pdf-parse');
 
 export class FileSkill implements ISkill {
     name = 'file_manager';
-    description = 'Lista arquivos ou lê o conteúdo de um arquivo específico em um diretório seguro.';
+    description = 'Lista arquivos ou lê o conteúdo de um arquivo específico em um diretório seguro. Suporta leitura de arquivos de texto e PDF.';
     parameters = {
         type: 'object',
         properties: {
@@ -51,7 +52,19 @@ export class FileSkill implements ISkill {
                 if (!stats.isFile()) {
                     return `Erro: "${args.path}" não é um arquivo.`;
                 }
-                const content = await fs.readFile(requestedPath, 'utf-8');
+
+                let content = '';
+                const ext = path.extname(requestedPath).toLowerCase();
+
+                if (ext === '.pdf') {
+                    const dataBuffer = await fs.readFile(requestedPath);
+                    const pdfData = await pdf(dataBuffer);
+                    content = pdfData.text;
+                } else {
+                    // Tenta ler como texto
+                    content = await fs.readFile(requestedPath, 'utf-8');
+                }
+
                 // Limita o tamanho do conteúdo retornado para não estourar o contexto da IA
                 if (content.length > 5000) {
                     return `Conteúdo do arquivo "${args.path}" (truncado nos primeiros 5000 caracteres):\n\n${content.substring(0, 5000)}...`;
