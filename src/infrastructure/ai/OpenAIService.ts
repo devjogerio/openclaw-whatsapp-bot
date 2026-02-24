@@ -1,11 +1,12 @@
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 import { config } from '../../config/env';
+import { ChatMessage } from '../../core/interfaces/IContextManager';
 import { IAIService } from '../../core/interfaces/IAIService';
 import { logger } from '../../utils/logger';
 import { SkillRegistry } from '../../core/services/SkillRegistry';
 
 /**
- * Implementação do serviço de IA utilizando a OpenAI (GPT).
+ * Implementação do serviço de IA utilizando a OpenAI (GPT, Whisper, TTS).
  */
 export class OpenAIService implements IAIService {
     private openai: OpenAI;
@@ -24,14 +25,18 @@ export class OpenAIService implements IAIService {
     /**
      * Gera resposta utilizando o modelo GPT da OpenAI.
      */
-    async generateResponse(prompt: string, context: string[] = []): Promise<string> {
+    async generateResponse(prompt: string, context: ChatMessage[] = []): Promise<string> {
         try {
             const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
                 { 
                     role: 'system', 
                     content: 'Você é OpenClaw, um assistente virtual avançado, autônomo e eficiente. Responda de forma direta e útil. Use as ferramentas disponíveis quando necessário.' 
                 },
-                ...context.map(msg => ({ role: 'user', content: msg } as OpenAI.Chat.Completions.ChatCompletionMessageParam)),
+                ...context.map(msg => ({
+                    role: msg.role as 'system' | 'user' | 'assistant' | 'function',
+                    content: msg.content,
+                    name: msg.name
+                } as OpenAI.Chat.Completions.ChatCompletionMessageParam)),
                 { role: 'user', content: prompt }
             ];
 
@@ -98,11 +103,44 @@ export class OpenAIService implements IAIService {
     }
 
     /**
-     * Transcreve áudio usando Whisper (Placeholder).
+     * Transcreve áudio usando Whisper.
      */
     async transcribeAudio(audioBuffer: Buffer): Promise<string> {
-        // TODO: Implementar transcrição com Whisper API
-        logger.warn('Transchição de áudio ainda não implementada.');
-        return '';
+        try {
+            logger.info('[AI] Transcrevendo áudio...');
+            const file = await toFile(audioBuffer, 'audio.ogg', { type: 'audio/ogg' });
+            
+            const transcription = await this.openai.audio.transcriptions.create({
+                file: file,
+                model: 'whisper-1',
+                language: 'pt', // Pode ser detectado automaticamente, mas fixar 'pt' ajuda na precisão
+            });
+
+            logger.info(`[AI] Transcrição: "${transcription.text}"`);
+            return transcription.text;
+        } catch (error) {
+            logger.error(error, 'Erro ao transcrever áudio');
+            return ''; // Retorna string vazia em caso de erro
+        }
+    }
+
+    /**
+     * Gera áudio (TTS) a partir de texto.
+     */
+    async generateAudio(text: string): Promise<Buffer> {
+        try {
+            logger.info('[AI] Gerando áudio TTS...');
+            const mp3 = await this.openai.audio.speech.create({
+                model: 'tts-1',
+                voice: 'alloy',
+                input: text,
+            });
+            
+            const buffer = Buffer.from(await mp3.arrayBuffer());
+            return buffer;
+        } catch (error) {
+            logger.error(error, 'Erro ao gerar áudio TTS');
+            throw error;
+        }
     }
 }

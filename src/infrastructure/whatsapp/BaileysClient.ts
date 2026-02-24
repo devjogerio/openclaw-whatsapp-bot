@@ -81,4 +81,15 @@ export class BaileysClient implements IMessagingClient {
         }
         await this.sock.sendMessage(to, { text: message });
     }
+
+    async sendAudio(to: string, audioBuffer: Buffer): Promise<void> {
+        if (!this.sock) {
+            throw new Error('Cliente WhatsApp não está conectado.');
+        }
+        await this.sock.sendMessage(to, { 
+            audio: audioBuffer, 
+            mimetype: 'audio/mp4', 
+            ptt: true 
+        });
+    }
 }
