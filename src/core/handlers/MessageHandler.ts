@@ -3,6 +3,8 @@ import { SecurityService } from '../services/SecurityService';
 import { OpenAIService } from '../../infrastructure/ai/OpenAIService';
 import { logger } from '../../utils/logger';
 import { proto } from '@whiskeysockets/baileys';
+import { SkillRegistry } from '../services/SkillRegistry';
+import { DateSkill } from '../skills/DateSkill';
 
 /**
  * Orquestrador central de mensagens.
@@ -12,11 +14,26 @@ export class MessageHandler {
     private securityService: SecurityService;
     private aiService: OpenAIService;
     private client: IMessagingClient;
+    private skillRegistry: SkillRegistry;
 
     constructor(client: IMessagingClient) {
         this.client = client;
         this.securityService = new SecurityService();
-        this.aiService = new OpenAIService();
+        
+        // Inicializa registro de skills
+        this.skillRegistry = new SkillRegistry();
+        this.registerSkills();
+
+        // Injeta registro de skills no serviço de IA
+        this.aiService = new OpenAIService(this.skillRegistry);
+    }
+
+    /**
+     * Registra as skills disponíveis no sistema.
+     */
+    private registerSkills(): void {
+        this.skillRegistry.register(new DateSkill());
+        // Futuras skills serão registradas aqui
     }
 
     /**

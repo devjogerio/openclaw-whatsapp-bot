@@ -1,3 +1,4 @@
+// messageHandler.test.ts
 import { MessageHandler } from '../../../src/core/handlers/MessageHandler';
 import { IMessagingClient } from '../../../src/core/interfaces/IMessagingClient';
 import { SecurityService } from '../../../src/core/services/SecurityService';
