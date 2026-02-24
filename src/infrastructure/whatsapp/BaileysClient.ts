@@ -1,7 +1,6 @@
 import makeWASocket, {
     DisconnectReason,
     useMultiFileAuthState,
-    WASocket,
     ConnectionState,
     WAProto,
     MessageUpsertType
@@ -12,7 +11,8 @@ import { config } from '../../config/env';
 import { logger } from '../../utils/logger';
 
 export class BaileysClient implements IMessagingClient {
-    private sock: any = null; // Usando any temporariamente para evitar conflitos de tipos complexos do Baileys
+    private sock: any = null;
+    private messageCallbacks: ((message: WAProto.IWebMessageInfo) => void)[] = [];
 
     async connect(): Promise<void> {
         const { state, saveCreds } = await useMultiFileAuthState(config.whatsappSessionPath);
@@ -32,7 +32,7 @@ export class BaileysClient implements IMessagingClient {
 
             if (connection === 'close') {
                 const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-                logger.warn(`Conexão fechada devido a: ${lastDisconnect?.error}, reconectando: ${shouldReconnect}`);
+                logger.warn(`Conexão fechada: ${lastDisconnect?.error}, reconectando: ${shouldReconnect}`);
                 
                 if (shouldReconnect) {
                     this.connect();
@@ -44,12 +44,20 @@ export class BaileysClient implements IMessagingClient {
 
         this.sock.ev.on('creds.update', saveCreds);
 
+        // Listener centralizado para mensagens
         this.sock.ev.on('messages.upsert', async (m: { messages: WAProto.IWebMessageInfo[], type: MessageUpsertType }) => {
-            if (m.type === 'notify') {
+            if (m.type === 'notify' || m.type === 'append') {
                 for (const msg of m.messages) {
+                    // Ignora mensagens enviadas pelo próprio bot (embora o handler também verifique, é bom filtrar aqui)
                     if (!msg.key.fromMe) {
-                        logger.info(`Nova mensagem recebida de ${msg.key.remoteJid}`);
-                        // Aqui emitiremos o evento para o handler
+                        // Dispara todos os callbacks registrados
+                        this.messageCallbacks.forEach(callback => {
+                            try {
+                                callback(msg);
+                            } catch (error) {
+                                logger.error(error, 'Erro ao executar callback de mensagem');
+                            }
+                        });
                     }
                 }
             }
@@ -60,17 +68,11 @@ export class BaileysClient implements IMessagingClient {
         this.sock?.end(undefined);
     }
 
-    onMessage(callback: (message: any) => void): void {
-        // Implementação simplificada para este estágio
-        if (this.sock) {
-            this.sock.ev.on('messages.upsert', (m: { messages: WAProto.IWebMessageInfo[], type: MessageUpsertType }) => {
-                 if (m.type === 'notify') {
-                    m.messages.forEach((msg: WAProto.IWebMessageInfo) => {
-                        if(!msg.key.fromMe) callback(msg);
-                    });
-                 }
-            });
-        }
+    /**
+     * Registra um callback para ser executado quando uma nova mensagem chegar.
+     */
+    onMessage(callback: (message: WAProto.IWebMessageInfo) => void): void {
+        this.messageCallbacks.push(callback);
     }
 
     async sendMessage(to: string, message: string): Promise<void> {
@@ -78,5 +80,16 @@ export class BaileysClient implements IMessagingClient {
             throw new Error('Cliente WhatsApp não está conectado.');
         }
         await this.sock.sendMessage(to, { text: message });
+    }
+
+    async sendAudio(to: string, audioBuffer: Buffer): Promise<void> {
+        if (!this.sock) {
+            throw new Error('Cliente WhatsApp não está conectado.');
+        }
+        await this.sock.sendMessage(to, { 
+            audio: audioBuffer, 
+            mimetype: 'audio/mp4', 
+            ptt: true 
+        });
     }
 }

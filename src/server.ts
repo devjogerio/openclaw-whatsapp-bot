@@ -1,20 +1,30 @@
 import { BaileysClient } from './infrastructure/whatsapp/BaileysClient';
+import { MessageHandler } from './core/handlers/MessageHandler';
 import { logger } from './utils/logger';
-import dotenv from 'dotenv';
+import { config } from './config/env';
 
-dotenv.config();
-
-const main = async () => {
+async function bootstrap() {
     try {
         logger.info('Iniciando OpenClaw WhatsApp Bot...');
         
-        const client = new BaileysClient();
-        await client.connect();
+        // Inicializa o Cliente WhatsApp
+        const whatsappClient = new BaileysClient();
+        
+        // Inicializa o Handler de Mensagens
+        const messageHandler = new MessageHandler(whatsappClient);
 
-        // Tratamento de encerramento gracioso
+        // Conecta o handler ao evento de mensagem
+        whatsappClient.onMessage((msg) => messageHandler.handle(msg));
+
+        // Inicia a conexão
+        await whatsappClient.connect();
+        
+        logger.info(`Sistema iniciado em ambiente: ${config.nodeEnv}`);
+
+        // Graceful Shutdown
         process.on('SIGINT', async () => {
             logger.info('Encerrando aplicação...');
-            await client.disconnect();
+            await whatsappClient.disconnect();
             process.exit(0);
         });
 
@@ -22,6 +32,6 @@ const main = async () => {
         logger.error(error, 'Erro fatal ao iniciar o sistema:');
         process.exit(1);
     }
-};
+}
 
-main();
+bootstrap();
