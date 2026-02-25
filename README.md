@@ -5,12 +5,13 @@ Assistente de IA autônomo e multimodal integrado ao WhatsApp, projetado para at
 ## 🚀 Funcionalidades Principais
 
 ### 🧠 Inteligência Artificial & Multimodalidade
-- **Processamento de Linguagem Natural**: Integração nativa com **Ollama** (rodando modelos locais como Llama 3, Mistral) para privacidade e independência da OpenAI.
-- **Suporte a OpenAI (Legado)**: Possibilidade de reativar a integração com OpenAI via configuração.
-- **Visão Computacional**: Suporte a modelos multimodais (como Llama 3.2 Vision ou via OpenAI GPT-4o).
+- **Integração OpenClaw API (Novo)**: Sistema principal de IA utilizando a API OpenClaw para processamento avançado, com suporte a caching e retry logic.
+- **Processamento de Linguagem Natural**: Capacidade de compreensão profunda de contexto e instruções complexas.
+- **Modo Híbrido/Backup**: Suporte legado a **Ollama** (local) para ambientes sem conexão externa.
+- **Visão Computacional**: Suporte a análise de imagens via OpenClaw Vision.
 - **Suporte a Voz (Bidirecional)**:
-  - **Speech-to-Text (STT)**: Transcrição automática (Nota: Requer configuração de serviço compatível, atualmente desabilitado no modo Ollama local).
-  - **Text-to-Speech (TTS)**: Respostas em áudio (Nota: Atualmente desabilitado no modo Ollama local).
+  - **Speech-to-Text (STT)**: Transcrição automática de áudios recebidos.
+  - **Text-to-Speech (TTS)**: Respostas em áudio natural.
 
 ### 🛠 Sistema de Skills (Habilidades)
 O bot possui um sistema extensível de skills que permite interagir com o mundo real:
@@ -26,15 +27,16 @@ O bot possui um sistema extensível de skills que permite interagir com o mundo 
 
 ### 🔒 Segurança & Arquitetura
 - **Clean Architecture**: Separação clara entre Core, Infraestrutura e Interfaces.
+- **Integração Robusta**: Implementação de *Circuit Breaker*, *Retry com Backoff Exponencial* e *Caching* (TTL 1h) para chamadas de API.
 - **Whitelist de Usuários**: Apenas números autorizados (configurados no `.env`) podem interagir com o bot.
-- **Contexto de Conversa**: Gerenciamento de histórico em memória (FIFO) para manter a coerência do diálogo.
-- **Microserviços**: Arquitetura desacoplada utilizando containers Docker para o bot, serviço de IA (Ollama) e gateway WhatsApp (WAHA).
+- **Memória Persistente**: Armazenamento local seguro via SQLite, mantendo o contexto das conversas mesmo após reinicializações.
+- **Microserviços**: Arquitetura desacoplada utilizando containers Docker.
 
 ## 🛠 Tecnologias Utilizadas
 
 - **Runtime**: Node.js & TypeScript
 - **WhatsApp API**: [WAHA (WhatsApp HTTP API)](https://waha.devlike.pro/) (Container Docker dedicado).
-- **AI Core**: Ollama (Llama 3, Mistral) & OpenAI API (Opcional).
+- **AI Core**: **OpenClaw API** (Principal) & Ollama (Backup).
 - **Tools**: `pdf-parse`, `duck-duck-scrape`, `dotenv`, `axios`.
 - **Testes**: Jest (Cobertura de testes unitários para Services, Handlers e Skills).
 - **Infraestrutura**: Docker & Docker Compose.
@@ -86,6 +88,10 @@ LOG_LEVEL=info
 # IA (Ollama)
 OLLAMA_HOST=http://ollama:11434
 OLLAMA_MODEL=llama3
+
+# Persistência
+DB_PATH=data/context.db
+MAX_CONTEXT_MESSAGES=50
 
 # Segurança
 WHITELIST_NUMBERS=5511999999999

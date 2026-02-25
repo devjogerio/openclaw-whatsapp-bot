@@ -1,17 +1,10 @@
 import { IMessagingClient } from '../interfaces/IMessagingClient';
 import { SecurityService } from '../services/SecurityService';
-import { OllamaService } from '../../infrastructure/ai/OllamaService';
 import { IAIService } from '../interfaces/IAIService';
 import { logger } from '../../utils/logger';
-import { SkillRegistry } from '../services/SkillRegistry';
-import { DateSkill } from '../skills/DateSkill';
-import { WebSearchSkill } from '../skills/WebSearchSkill';
-import { FileSkill } from '../skills/FileSkill';
-import { CommandSkill } from '../skills/CommandSkill';
 import { IContextManager } from '../interfaces/IContextManager';
 import { InMemoryContextManager } from '../../infrastructure/context/InMemoryContextManager';
 import { config } from '../../config/env';
-import axios from 'axios';
 
 /**
  * Orquestrador central de mensagens.
@@ -21,31 +14,17 @@ export class MessageHandler {
     private securityService: SecurityService;
     private aiService: IAIService;
     private client: IMessagingClient;
-    private skillRegistry: SkillRegistry;
     private contextManager: IContextManager;
 
-    constructor(client: IMessagingClient, contextManager?: IContextManager) {
+    constructor(
+        client: IMessagingClient, 
+        aiService: IAIService, 
+        contextManager?: IContextManager
+    ) {
         this.client = client;
+        this.aiService = aiService;
         this.securityService = new SecurityService();
         this.contextManager = contextManager || new InMemoryContextManager();
-        
-        // Inicializa registro de skills
-        this.skillRegistry = new SkillRegistry();
-        this.registerSkills();
-
-        // Injeta registro de skills no serviço de IA (Agora usando Ollama)
-        this.aiService = new OllamaService(this.skillRegistry);
-    }
-
-    /**
-     * Registra as skills disponíveis no sistema.
-     */
-    private registerSkills(): void {
-        this.skillRegistry.register(new DateSkill());
-        this.skillRegistry.register(new WebSearchSkill());
-        this.skillRegistry.register(new FileSkill());
-        this.skillRegistry.register(new CommandSkill());
-        // Futuras skills serão registradas aqui
     }
 
     /**
