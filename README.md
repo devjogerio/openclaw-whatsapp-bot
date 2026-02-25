@@ -27,7 +27,7 @@ O bot possui um sistema extensível de skills que permite interagir com o mundo 
 ### 🔒 Segurança & Arquitetura
 - **Clean Architecture**: Separação clara entre Core, Infraestrutura e Interfaces.
 - **Whitelist de Usuários**: Apenas números autorizados (configurados no `.env`) podem interagir com o bot.
-- **Contexto de Conversa**: Gerenciamento de histórico em memória (FIFO) para manter a coerência do diálogo.
+- **Memória Persistente**: Armazenamento local seguro via SQLite, mantendo o contexto das conversas mesmo após reinicializações, com gerenciamento automático de histórico (FIFO) para otimização.
 - **Microserviços**: Arquitetura desacoplada utilizando containers Docker para o bot, serviço de IA (Ollama) e gateway WhatsApp (WAHA).
 
 ## 🛠 Tecnologias Utilizadas
@@ -86,6 +86,10 @@ LOG_LEVEL=info
 # IA (Ollama)
 OLLAMA_HOST=http://ollama:11434
 OLLAMA_MODEL=llama3
+
+# Persistência
+DB_PATH=data/context.db
+MAX_CONTEXT_MESSAGES=50
 
 # Segurança
 WHITELIST_NUMBERS=5511999999999

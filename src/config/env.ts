@@ -10,6 +10,8 @@ export const config = {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     ollamaHost: process.env.OLLAMA_HOST || 'http://localhost:11434',
     ollamaModel: process.env.OLLAMA_MODEL || 'llama3',
+    dbPath: process.env.DB_PATH || 'data/context.db',
+    maxContextMessages: parseInt(process.env.MAX_CONTEXT_MESSAGES || '50', 10),
     whitelistNumbers: process.env.WHITELIST_NUMBERS ? process.env.WHITELIST_NUMBERS.split(',') : [],
     audioResponseEnabled: process.env.AUDIO_RESPONSE_ENABLED === 'true',
 };
