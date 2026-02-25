@@ -51,12 +51,20 @@ export class NotionSkill implements ISkill {
     private notion: Client;
 
     constructor() {
-        if (!config.notionApiKey) {
-            logger.warn('Notion API Key não configurada. A skill Notion pode falhar.');
-        }
+        this.validateConfiguration();
         this.notion = new Client({
             auth: config.notionApiKey,
         });
+    }
+
+    private validateConfiguration() {
+        if (!config.notionApiKey) {
+            logger.warn('⚠️  Notion API Key não encontrada! A skill Notion não funcionará corretamente.');
+            logger.warn('PARA CORRIGIR:');
+            logger.warn('1. Obtenha seu Internal Integration Secret em https://www.notion.so/my-integrations');
+            logger.warn('2. Adicione ao .env : NOTION_API_KEY=ntn_...');
+            logger.warn('3. Crucial: No Notion, compartilhe as páginas/databases desejados com a sua integração (Menu ... > Connect to > Sua Integração).');
+        }
     }
 
     async execute(params: NotionParams): Promise<string> {
