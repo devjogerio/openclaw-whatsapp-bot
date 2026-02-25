@@ -35,6 +35,11 @@ O bot possui um sistema extensível de skills que permite interagir com o mundo 
   - Atualizar detalhes de eventos existentes.
   - Excluir eventos.
   - Autenticação segura via OAuth2.
+- **Notion (Novo)**: Integração com Notion para gestão de conhecimento.
+  - Busca inteligente de páginas e bancos de dados.
+  - Criação de novas páginas em databases.
+  - Leitura de conteúdo de páginas.
+  - Adição de blocos de texto a páginas existentes.
 
 ### 🔒 Segurança & Arquitetura
 - **Clean Architecture**: Separação clara entre Core, Infraestrutura e Interfaces.

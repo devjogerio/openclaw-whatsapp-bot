@@ -20,6 +20,7 @@
   "author": "OpenClaw Team",
   "license": "ISC",
   "dependencies": {
+    "@notionhq/client": "^5.9.0",
     "@types/body-parser": "^1.19.6",
     "@types/express": "^5.0.6",
     "axios": "^1.13.5",

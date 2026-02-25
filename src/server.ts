@@ -8,6 +8,7 @@ import { WebSearchSkill } from './core/skills/WebSearchSkill';
 import { FileSkill } from './core/skills/FileSkill';
 import { CommandSkill } from './core/skills/CommandSkill';
 import { GoogleCalendarSkill } from './core/skills/GoogleCalendarSkill';
+import { NotionSkill } from './core/skills/NotionSkill';
 import { logger } from './utils/logger';
 import { config } from './config/env';
 import { RedisCacheService } from './infrastructure/cache/RedisCacheService';
@@ -32,6 +33,7 @@ async function bootstrap() {
         skillRegistry.register(new FileSkill());
         skillRegistry.register(new CommandSkill());
         skillRegistry.register(new GoogleCalendarSkill());
+        skillRegistry.register(new NotionSkill());
         logger.info('Skills registradas com sucesso.');
 
         // Inicializa o Serviço de IA (OpenClaw como principal)
