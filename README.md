@@ -11,9 +11,6 @@ Assistente de IA autônomo e multimodal integrado ao WhatsApp, projetado para at
 - **Processamento de Linguagem Natural**: Capacidade de compreensão profunda de contexto e instruções complexas.
 - **Modo Híbrido/Backup**: Suporte legado a **Ollama** (local) para ambientes sem conexão externa.
 - **Visão Computacional**: Suporte a análise de imagens via OpenClaw Vision.
-- **Observabilidade Completa (Novo)**:
-  - Métricas em tempo real via **Prometheus** (Uso de tokens, latência, erros).
-  - Dashboards visuais no **Grafana**.
 - **Performance & UX (Novo)**:
   - **Streaming de Respostas**: Feedback visual instantâneo (digitando...) e envio progressivo de texto.
   - **Persistência de Cache**: Utilização de **Redis** para cache distribuído e resiliente a reinicializações.
@@ -46,7 +43,6 @@ O bot possui um sistema extensível de skills que permite interagir com o mundo 
 - **WhatsApp API**: [WAHA (WhatsApp HTTP API)](https://waha.devlike.pro/) (Container Docker dedicado).
 - **AI Core**: **OpenClaw API** (Principal) & Ollama (Backup).
 - **Cache**: Redis (Persistência e alta performance).
-- **Monitoramento**: Prometheus & Grafana.
 - **Tools**: `pdf-parse`, `duck-duck-scrape`, `dotenv`, `axios`.
 - **Testes**: Jest (Cobertura de testes unitários para Services, Handlers e Skills).
 - **Infraestrutura**: Docker & Docker Compose.

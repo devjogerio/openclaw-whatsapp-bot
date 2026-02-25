@@ -6,13 +6,12 @@ import { ChatMessage } from '../../core/interfaces/IContextManager';
 import { config } from '../../config/env';
 import { logger } from '../../utils/logger';
 import { SkillRegistry } from '../../core/services/SkillRegistry';
-import { metrics } from '../monitoring/MetricsService';
 import { MemoryCacheService } from '../cache/MemoryCacheService';
 import * as crypto from 'crypto';
 
 /**
  * Serviço de integração com a API OpenClaw.
- * Implementa retry logic, caching (Redis/Memory), métricas e streaming.
+ * Implementa retry logic, caching (Redis/Memory) e streaming.
  */
 export class OpenClawService implements IAIService {
     private client: AxiosInstance;
@@ -50,18 +49,14 @@ export class OpenClawService implements IAIService {
         const cached = await this.cache.get<string>(cacheKey);
         if (cached) {
             logger.info('[OpenClaw] Cache hit para prompt.');
-            metrics.recordDuration(config.openclawModel, 'generateResponse_cache', (Date.now() - start) / 1000);
             return cached;
         }
 
         try {
-            const content = await this.executeWithRetry(async () => {
+            return await this.executeWithRetry(async () => {
                 const messages = this.formatMessages(prompt, context, imageUrl);
                 const tools = this.getToolsDefinition();
                 
-                // Métricas: Contagem de Tokens (estimada)
-                metrics.recordTokens(config.openclawModel, this.estimateTokens(JSON.stringify(messages)), 0);
-
                 const response = await this.client.post('/chat/completions', {
                     model: config.openclawModel,
                     messages,
@@ -83,17 +78,10 @@ export class OpenClawService implements IAIService {
                     await this.cache.set(cacheKey, outputContent, config.cacheTtl);
                 }
 
-                // Métricas: Output Tokens (estimada)
-                metrics.recordTokens(config.openclawModel, 0, this.estimateTokens(outputContent));
-
                 return outputContent;
             });
 
-            metrics.recordDuration(config.openclawModel, 'generateResponse', (Date.now() - start) / 1000);
-            return content;
-
         } catch (error) {
-            metrics.recordError('generateResponse');
             throw error;
         }
     }
@@ -140,11 +128,7 @@ export class OpenClawService implements IAIService {
                 }
             }
             
-            metrics.recordDuration(config.openclawModel, 'generateResponseStream', (Date.now() - start) / 1000);
-            metrics.recordTokens(config.openclawModel, this.estimateTokens(JSON.stringify(messages)), this.estimateTokens(buffer));
-
         } catch (error) {
-            metrics.recordError('generateResponseStream');
             logger.error(`[OpenClaw] Erro no streaming: ${error}`);
             throw error;
         }
