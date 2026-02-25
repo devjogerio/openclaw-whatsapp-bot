@@ -18,6 +18,17 @@ export const config = {
     // Persistência
     dbPath: process.env.DB_PATH || 'data/context.db',
     maxContextMessages: parseInt(process.env.MAX_CONTEXT_MESSAGES || '50', 10),
+    
+    // Cache (Redis)
+    redisHost: process.env.REDIS_HOST || 'redis',
+    redisPort: parseInt(process.env.REDIS_PORT || '6379', 10),
+    redisPassword: process.env.REDIS_PASSWORD || '',
+    cacheTtl: parseInt(process.env.CACHE_TTL || '3600', 10), // 1h
+
+    // Observabilidade
+    metricsPort: parseInt(process.env.METRICS_PORT || '9090', 10),
+    metricsEnabled: process.env.METRICS_ENABLED !== 'false',
+
     // Segurança e Features
     whitelistNumbers: process.env.WHITELIST_NUMBERS ? process.env.WHITELIST_NUMBERS.split(',') : [],
     audioResponseEnabled: process.env.AUDIO_RESPONSE_ENABLED === 'true',

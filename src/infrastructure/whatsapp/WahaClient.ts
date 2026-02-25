@@ -101,6 +101,22 @@ export class WahaClient implements IMessagingClient {
         }
     }
 
+    async setTypingState(to: string, state: boolean): Promise<void> {
+        try {
+            await axios.post(`${this.baseUrl}/api/${state ? 'startTyping' : 'stopTyping'}`, {
+                chatId: to,
+                session: 'default'
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Api-Key': this.apiKey
+                }
+            });
+        } catch (error: any) {
+            logger.warn(`[WAHA] Erro ao definir estado typing: ${error.message}`);
+        }
+    }
+
     async sendAudio(to: string, audioBuffer: Buffer): Promise<void> {
         try {
             // WAHA espera base64 para arquivos ou URL
