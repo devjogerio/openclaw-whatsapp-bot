@@ -38,4 +38,7 @@ export const config = {
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth2callback',
     googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN || '',
+
+    // Notion Integration
+    notionApiKey: process.env.NOTION_API_KEY || '',
 };
