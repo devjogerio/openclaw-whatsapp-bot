@@ -1,12 +1,11 @@
 import { MessageHandler } from '../../../src/core/handlers/MessageHandler';
 import { IMessagingClient } from '../../../src/core/interfaces/IMessagingClient';
 import { SecurityService } from '../../../src/core/services/SecurityService';
-import { OllamaService } from '../../../src/infrastructure/ai/OllamaService';
+import { IAIService } from '../../../src/core/interfaces/IAIService';
 import { IContextManager } from '../../../src/core/interfaces/IContextManager';
 
 // Mocks
 jest.mock('../../../src/core/services/SecurityService');
-jest.mock('../../../src/infrastructure/ai/OllamaService');
 jest.mock('../../../src/utils/logger', () => ({
     logger: {
         info: jest.fn(),
@@ -27,7 +26,7 @@ describe('MessageHandler', () => {
     let messageHandler: MessageHandler;
     let mockClient: jest.Mocked<IMessagingClient>;
     let mockSecurityService: jest.Mocked<SecurityService>;
-    let mockAiService: jest.Mocked<OllamaService>;
+    let mockAiService: jest.Mocked<IAIService>;
     let mockContextManager: jest.Mocked<IContextManager>;
 
     beforeEach(() => {
@@ -39,7 +38,7 @@ describe('MessageHandler', () => {
             sendMessage: jest.fn(),
             sendAudio: jest.fn(),
             downloadMedia: jest.fn(),
-        };
+        } as any;
 
         mockContextManager = {
             addMessage: jest.fn(),
@@ -47,17 +46,20 @@ describe('MessageHandler', () => {
             clearHistory: jest.fn(),
         };
 
+        mockAiService = {
+            generateResponse: jest.fn(),
+            transcribeAudio: jest.fn(),
+            generateAudio: jest.fn(),
+        };
+
         // Clear mocks instances
         (SecurityService as jest.Mock).mockClear();
-        (OllamaService as jest.Mock).mockClear();
 
-        messageHandler = new MessageHandler(mockClient, mockContextManager);
+        messageHandler = new MessageHandler(mockClient, mockAiService, mockContextManager);
 
         // Access the mocked instances created inside the constructor
         // @ts-ignore
         mockSecurityService = SecurityService.mock.instances[0];
-        // @ts-ignore
-        mockAiService = OllamaService.mock.instances[0];
     });
 
     const createMockMessage = (remoteJid: string, text: string, fromMe: boolean = false) => ({
@@ -76,7 +78,7 @@ describe('MessageHandler', () => {
         const responseText = 'Hello Human';
 
         mockSecurityService.isAllowed.mockReturnValue(true);
-        mockAiService.generateResponse.mockResolvedValue(responseText);
+        (mockAiService.generateResponse as jest.Mock).mockResolvedValue(responseText);
 
         await messageHandler.handle(createMockMessage(remoteJid, text));
 
