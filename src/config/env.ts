@@ -32,4 +32,10 @@ export const config = {
     // Segurança e Features
     whitelistNumbers: process.env.WHITELIST_NUMBERS ? process.env.WHITELIST_NUMBERS.split(',') : [],
     audioResponseEnabled: process.env.AUDIO_RESPONSE_ENABLED === 'true',
+
+    // Google Calendar Integration
+    googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+    googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth2callback',
+    googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN || '',
 };

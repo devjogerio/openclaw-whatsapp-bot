@@ -29,6 +29,12 @@ O bot possui um sistema extensível de skills que permite interagir com o mundo 
   - Execução segura de comandos de shell permitidos (`ls`, `echo`, `cat`, `grep`, etc.).
   - Whitelist rigorosa para prevenir execução de comandos perigosos.
 - **Date & Time**: Consulta e manipulação de datas e horários.
+- **Google Calendar (Novo)**: Integração completa com o Google Calendar para gerenciar agenda pessoal.
+  - Listar próximos eventos.
+  - Criar novos compromissos com data, hora e descrição.
+  - Atualizar detalhes de eventos existentes.
+  - Excluir eventos.
+  - Autenticação segura via OAuth2.
 
 ### 🔒 Segurança & Arquitetura
 - **Clean Architecture**: Separação clara entre Core, Infraestrutura e Interfaces.
@@ -108,9 +114,30 @@ WAHA_API_KEY=sua_chave_secreta
 WAHA_DASHBOARD_USERNAME=admin
 WAHA_DASHBOARD_PASSWORD=admin
 WAHA_WEBHOOK_URL=http://app:3002/webhook
+
+# Google Calendar (Opcional)
+GOOGLE_CLIENT_ID=seu_client_id
+GOOGLE_CLIENT_SECRET=seu_client_secret
+GOOGLE_REDIRECT_URI=http://localhost:3000/oauth2callback
+GOOGLE_REFRESH_TOKEN=seu_refresh_token
 ```
 
-### 3. Executar com Docker (Recomendado)
+### 3. Configuração do Google Calendar (Opcional)
+
+Para ativar a integração com o Google Calendar, siga estes passos:
+
+1.  Acesse o [Google Cloud Console](https://console.cloud.google.com/).
+2.  Crie um novo projeto e ative a **Google Calendar API**.
+3.  Vá em **Credentials** -> **Create Credentials** -> **OAuth Client ID**.
+4.  Configure como **Web Application** e adicione o `GOOGLE_REDIRECT_URI` (ex: `https://developers.google.com/oauthplayground` para testes manuais ou seu endpoint de callback).
+5.  Obtenha o `Client ID` e `Client Secret`.
+6.  Para obter o `Refresh Token`:
+    *   Acesse o [OAuth 2.0 Playground](https://developers.google.com/oauthplayground).
+    *   Selecione a API "Google Calendar API v3" e autorize os escopos (`https://www.googleapis.com/auth/calendar`).
+    *   Troque o código de autorização por tokens.
+    *   Copie o `Refresh Token` para o seu arquivo `.env`.
+
+### 4. Executar com Docker Compose
 
 Utilize o script de automação para facilitar o processo:
 
