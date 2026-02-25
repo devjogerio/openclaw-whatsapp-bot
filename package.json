@@ -21,8 +21,6 @@
   "license": "ISC",
   "dependencies": {
     "@notionhq/client": "^5.9.0",
-    "@types/body-parser": "^1.19.6",
-    "@types/express": "^5.0.6",
     "axios": "^1.13.5",
     "body-parser": "^2.2.2",
     "dotenv": "^16.4.5",
@@ -39,6 +37,8 @@
     "winston": "^3.13.0"
   },
   "devDependencies": {
+    "@types/body-parser": "^1.19.6",
+    "@types/express": "^5.0.6",
     "@types/ioredis": "^4.28.10",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.14.9",
