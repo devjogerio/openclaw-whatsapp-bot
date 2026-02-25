@@ -99,16 +99,63 @@ export class MessageHandler {
             logger.info(`[AI] Contexto recuperado para ${remoteJid}: ${history.length} mensagens.`);
 
             logger.info(`[AI] Gerando resposta para ${remoteJid}...`);
-            const response = await this.aiService.generateResponse(text, history, imageUrl);
 
-            // Salva a interação no histórico
+            let response = '';
+
+            // Verifica se suporta streaming e typing
+            if (this.aiService.generateResponseStream && this.client.setTypingState) {
+                logger.info(`[AI] Iniciando streaming para ${remoteJid}...`);
+                await this.client.setTypingState(remoteJid, true);
+                
+                let buffer = '';
+                let lastTypingTime = Date.now();
+                const stream = this.aiService.generateResponseStream(text, history, imageUrl);
+
+                for await (const chunk of stream) {
+                    buffer += chunk;
+                    response += chunk;
+
+                    // Refresh typing state a cada 4 segundos
+                    if (Date.now() - lastTypingTime > 4000) {
+                        await this.client.setTypingState(remoteJid, true);
+                        lastTypingTime = Date.now();
+                    }
+
+                    // Envio parcial por parágrafos (reduz latência percebida em textos longos)
+                    if (buffer.length > 200 && (buffer.includes('\n\n') || buffer.includes('. '))) {
+                        const splitChar = buffer.includes('\n\n') ? '\n\n' : '. ';
+                        const parts = buffer.split(splitChar);
+                        
+                        // Envia tudo exceto o último fragmento
+                        if (parts.length > 1) {
+                            const toSend = parts.slice(0, -1).join(splitChar) + (splitChar === '. ' ? '.' : '');
+                            if (toSend.trim()) {
+                                await this.client.sendMessage(remoteJid, toSend);
+                                buffer = parts[parts.length - 1]; 
+                            }
+                        }
+                    }
+                }
+                
+                // Envia o restante do buffer
+                if (buffer.trim()) {
+                    await this.client.sendMessage(remoteJid, buffer);
+                }
+
+                await this.client.setTypingState(remoteJid, false);
+                logger.info(`[AI] Resposta (stream) finalizada para ${remoteJid}`);
+
+            } else {
+                // Fallback para geração única sem streaming
+                response = await this.aiService.generateResponse(text, history, imageUrl);
+                await this.client.sendMessage(remoteJid, response);
+                logger.info(`[AI] Resposta enviada para ${remoteJid}`);
+            }
+
+            // Salva a interação no histórico (resposta completa)
             const userContent = imageUrl ? `[Imagem enviada] ${text}` : text;
             await this.contextManager.addMessage(remoteJid, { role: 'user', content: userContent });
             await this.contextManager.addMessage(remoteJid, { role: 'assistant', content: response });
-
-            // 3. Envio da Resposta
-            await this.client.sendMessage(remoteJid, response);
-            logger.info(`[AI] Resposta enviada para ${remoteJid}`);
 
             // Enviar áudio de volta se a mensagem original foi áudio e estiver habilitado
             // (Requer implementação de envio de áudio no WahaClient e detecção de tipo de msg)

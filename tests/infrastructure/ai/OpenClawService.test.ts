@@ -96,4 +96,36 @@ describe('OpenClawService', () => {
         await expect(service.generateResponse('Falha Total')).rejects.toEqual(error500);
         expect(mockAxiosInstance.post).toHaveBeenCalledTimes(3); // 3 tentativas padrão
     }, 10000); // Aumenta timeout para 10s devido ao backoff
+
+    it('deve gerar resposta em stream', async () => {
+        const streamData = [
+            'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
+            'data: {"choices":[{"delta":{"content":" World"}}]}\n\n',
+            'data: [DONE]\n\n'
+        ];
+        
+        // Mock do stream response
+        const mockStream = {
+            data: (async function* () {
+                for (const chunk of streamData) {
+                    yield chunk;
+                }
+            })()
+        };
+
+        mockAxiosInstance.post.mockResolvedValue(mockStream);
+
+        const generator = service.generateResponseStream!('Stream Test');
+        let result = '';
+        for await (const chunk of generator) {
+            result += chunk;
+        }
+
+        expect(result).toBe('Hello World');
+        expect(mockAxiosInstance.post).toHaveBeenCalledWith('/chat/completions', expect.objectContaining({
+            stream: true
+        }), expect.objectContaining({
+            responseType: 'stream'
+        }));
+    });
 });

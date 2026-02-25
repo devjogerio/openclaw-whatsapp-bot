@@ -11,6 +11,12 @@ export interface IAIService {
     generateResponse(prompt: string, context?: ChatMessage[], imageUrl?: string): Promise<string>;
 
     /**
+     * Gera uma resposta em stream.
+     * Retorna um AsyncGenerator que yielda chunks de texto.
+     */
+    generateResponseStream?(prompt: string, context?: ChatMessage[], imageUrl?: string): AsyncGenerator<string, void, unknown>;
+
+    /**
      * Transcreve áudio para texto.
      * @param audioBuffer O buffer do arquivo de áudio.
      * @returns O texto transcrito.
