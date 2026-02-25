@@ -2,7 +2,7 @@ import { ISkill } from '../interfaces/ISkill';
 import { logger } from '../../utils/logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import pdf = require('pdf-parse');
+import * as pdf from 'pdf-parse';
 
 export class FileSkill implements ISkill {
     name = 'file_manager';
@@ -58,7 +58,7 @@ export class FileSkill implements ISkill {
 
                 if (ext === '.pdf') {
                     const dataBuffer = await fs.readFile(requestedPath);
-                    const pdfData = await pdf(dataBuffer);
+                    const pdfData = await pdf.default(dataBuffer);
                     content = pdfData.text;
                 } else {
                     // Tenta ler como texto

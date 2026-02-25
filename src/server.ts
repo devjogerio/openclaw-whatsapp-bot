@@ -9,16 +9,12 @@ import { FileSkill } from './core/skills/FileSkill';
 import { CommandSkill } from './core/skills/CommandSkill';
 import { logger } from './utils/logger';
 import { config } from './config/env';
-import { metrics } from './infrastructure/monitoring/MetricsService';
 import { RedisCacheService } from './infrastructure/cache/RedisCacheService';
 
 async function bootstrap() {
     try {
         logger.info('Iniciando OpenClaw WhatsApp Bot (via WAHA)...');
         
-        // Inicializa Métricas
-        metrics.startMetricsServer();
-
         // Inicializa o Gerenciador de Contexto Persistente (SQLite)
         const contextManager = new SQLiteContextManager(config.dbPath, config.maxContextMessages);
         logger.info(`Contexto persistente inicializado em: ${config.dbPath}`);
@@ -57,7 +53,6 @@ async function bootstrap() {
         // Graceful Shutdown
         process.on('SIGINT', async () => {
             logger.info('Encerrando aplicação...');
-            metrics.stopMetricsServer();
             await cacheService.disconnect();
             await whatsappClient.disconnect();
             process.exit(0);

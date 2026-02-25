@@ -8,7 +8,6 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT}:${PORT}"
-      - "${METRICS_PORT:-9090}:9090"
     env_file:
       - .env
     environment:
@@ -16,7 +15,6 @@ services:
       - WAHA_API_KEY=${WAHA_API_KEY}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - METRICS_PORT=9090
     networks:
       - openclaw_network
     depends_on:
@@ -111,39 +109,6 @@ services:
       timeout: 5s
       retries: 5
 
-  prometheus:
-    image: prom/prometheus
-    container_name: openclaw-prometheus
-    restart: unless-stopped
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-    networks:
-      - openclaw_network
-    depends_on:
-      - app
-
-  grafana:
-    image: grafana/grafana
-    container_name: openclaw-grafana
-    restart: unless-stopped
-    ports:
-      - "3001:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana_data:/var/lib/grafana
-    networks:
-      - openclaw_network
-    depends_on:
-      - prometheus
-
 networks:
   openclaw_network:
     driver: bridge
@@ -153,5 +118,3 @@ volumes:
   waha_sessions:
   waha_files:
   redis_data:
-  prometheus_data:
-  grafana_data:
