@@ -5,6 +5,8 @@
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
+    "start:openclaw": "docker-compose up -d && nodemon src/server.ts",
+    "stop:openclaw": "docker-compose down",
     "dev": "nodemon src/server.ts",
     "build": "tsc",
     "test": "jest"
