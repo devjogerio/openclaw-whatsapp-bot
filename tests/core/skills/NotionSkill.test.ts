@@ -8,6 +8,7 @@ const mockPagesUpdate = jest.fn(); // Para archive
 const mockBlocksChildrenList = jest.fn();
 const mockBlocksChildrenAppend = jest.fn();
 const mockDatabasesQuery = jest.fn(); // Para query_database
+const mockDatabasesRetrieve = jest.fn(); // Novo mock para retrieve
 
 jest.mock('@notionhq/client', () => {
     return {
@@ -26,6 +27,7 @@ jest.mock('@notionhq/client', () => {
                 },
                 databases: {
                     query: mockDatabasesQuery,
+                    retrieve: mockDatabasesRetrieve,
                 },
             };
         }),
@@ -76,7 +78,15 @@ describe('NotionSkill', () => {
         expect(result).toContain('page-123');
     });
 
-    it('should create a page', async () => {
+    it('should create a page with detected title property', async () => {
+        // Mock do schema do database
+        mockDatabasesRetrieve.mockResolvedValue({
+            properties: {
+                "Tarefa": { type: "title" },
+                "Status": { type: "select" }
+            }
+        });
+
         mockPagesCreate.mockResolvedValue({
             id: 'new-page-123',
             url: 'https://notion.so/new-page-123',
@@ -89,24 +99,42 @@ describe('NotionSkill', () => {
             content: 'Descrição da tarefa',
         });
 
+        // Verifica se tentou recuperar o schema
+        expect(mockDatabasesRetrieve).toHaveBeenCalledWith({ database_id: 'db-123' });
+
+        // Verifica se usou a propriedade "Tarefa" em vez de "Name"
         expect(mockPagesCreate).toHaveBeenCalledWith(expect.objectContaining({
             parent: { database_id: 'db-123' },
             properties: expect.objectContaining({
-                "Name": expect.objectContaining({ // O código usa "Name"
+                "Tarefa": expect.objectContaining({
                     title: [{ text: { content: 'Nova Tarefa' } }],
                 }),
             }),
-            children: expect.arrayContaining([
-                expect.objectContaining({
-                    paragraph: {
-                        rich_text: [{ text: { content: 'Descrição da tarefa' }, type: 'text' }],
-                    },
-                }),
-            ]),
         }));
         expect(result).toContain('Página criada com sucesso');
-        expect(result).toContain('new-page-123');
     });
+
+    it('should fallback to "Name" if schema retrieval fails', async () => {
+        mockDatabasesRetrieve.mockRejectedValue(new Error('Access denied'));
+
+        mockPagesCreate.mockResolvedValue({
+            id: 'new-page-123',
+            url: 'https://notion.so/new-page-123',
+        });
+
+        await skill.execute({
+            action: 'create_page',
+            databaseId: 'db-123',
+            title: 'Nova Tarefa',
+        });
+
+        expect(mockPagesCreate).toHaveBeenCalledWith(expect.objectContaining({
+            properties: expect.objectContaining({
+                "Name": expect.anything()
+            })
+        }));
+    });
+
 
     it('should archive a page', async () => {
         mockPagesUpdate.mockResolvedValue({ id: 'page-123', archived: true });

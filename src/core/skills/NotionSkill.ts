@@ -239,6 +239,20 @@ export class NotionSkill implements ISkill {
             return 'Erro: databaseId e title são obrigatórios para criar uma página.';
         }
 
+        // 1. Descobrir o nome da propriedade de título do banco de dados
+        let titlePropertyName = 'Name'; // Fallback padrão
+        try {
+            const database = await this.notion.databases.retrieve({ database_id: databaseId }) as any;
+            if (database.properties) {
+                const titleProp = Object.entries(database.properties).find(([_, prop]: [string, any]) => prop.type === 'title');
+                if (titleProp) {
+                    titlePropertyName = titleProp[0];
+                }
+            }
+        } catch (e) {
+            logger.warn(`Não foi possível recuperar o schema do database ${databaseId}. Usando "Name" como padrão.`);
+        }
+
         const children: any[] = [];
         if (content) {
             children.push({
@@ -257,31 +271,28 @@ export class NotionSkill implements ISkill {
             });
         }
 
-        // Nota: Assumimos que a propriedade de título se chama "Name", que é o padrão.
-        // Se o usuário mudou o nome da propriedade de título no database, isso pode falhar.
-        // Uma melhoria futura seria buscar o schema do database antes.
         try {
+            const properties: any = {};
+            properties[titlePropertyName] = {
+                title: [
+                    {
+                        text: {
+                            content: title,
+                        },
+                    },
+                ],
+            };
+
             const response = await this.notion.pages.create({
                 parent: {
                     database_id: databaseId,
                 },
-                properties: {
-                    "Name": {
-                        title: [
-                            {
-                                text: {
-                                    content: title,
-                                },
-                            },
-                        ],
-                    },
-                },
+                properties: properties,
                 children: children,
             });
              return `Página criada com sucesso! ID: ${response.id} URL: ${(response as any).url}`;
         } catch (e: any) {
-             // Tenta com "title" minúsculo caso "Name" falhe, ou retorna erro sugerindo verificar
-             return `Erro ao criar página: ${e.message}. Verifique se a propriedade de título do database se chama "Name".`;
+             return `Erro ao criar página: ${e.message}. Tentei usar a propriedade "${titlePropertyName}".`;
         }
     }
 
@@ -292,33 +303,41 @@ export class NotionSkill implements ISkill {
 
         const response = await this.notion.blocks.children.list({
             block_id: pageId,
-            page_size: 20,
+            page_size: 50, // Aumentado para 50
         });
 
         const content = response.results.map((block: any) => {
-            if (block.type === 'paragraph' && block.paragraph.rich_text.length > 0) {
-                return block.paragraph.rich_text.map((t: any) => t.plain_text).join('');
-            } else if (block.type === 'heading_1' && block.heading_1.rich_text.length > 0) {
-                return `# ${block.heading_1.rich_text.map((t: any) => t.plain_text).join('')}`;
-            } else if (block.type === 'heading_2' && block.heading_2.rich_text.length > 0) {
-                return `## ${block.heading_2.rich_text.map((t: any) => t.plain_text).join('')}`;
-            } else if (block.type === 'heading_3' && block.heading_3.rich_text.length > 0) {
-                return `### ${block.heading_3.rich_text.map((t: any) => t.plain_text).join('')}`;
-            } else if (block.type === 'to_do' && block.to_do.rich_text.length > 0) {
-                const check = block.to_do.checked ? '[x]' : '[ ]';
-                return `${check} ${block.to_do.rich_text.map((t: any) => t.plain_text).join('')}`;
-            } else if (block.type === 'bulleted_list_item' && block.bulleted_list_item.rich_text.length > 0) {
-                return `- ${block.bulleted_list_item.rich_text.map((t: any) => t.plain_text).join('')}`;
+            const type = block.type;
+            if (block[type] && block[type].rich_text && block[type].rich_text.length > 0) {
+                const text = block[type].rich_text.map((t: any) => t.plain_text).join('');
+                
+                switch (type) {
+                    case 'heading_1': return `# ${text}`;
+                    case 'heading_2': return `## ${text}`;
+                    case 'heading_3': return `### ${text}`;
+                    case 'bulleted_list_item': return `* ${text}`;
+                    case 'numbered_list_item': return `1. ${text}`;
+                    case 'to_do':
+                        const checked = block.to_do.checked ? '[x]' : '[ ]';
+                        return `${checked} ${text}`;
+                    case 'paragraph': return text;
+                    default: return text;
+                }
             }
-            return ''; // Tipos não suportados ignorados por simplicidade
+            return '';
         }).filter(line => line !== '').join('\n');
 
-        return content || 'Página vazia ou conteúdo não suportado (apenas texto simples é exibido).';
+        return content || 'Página vazia ou conteúdo não suportado.';
     }
 
     private async appendBlock(pageId?: string, content?: string, blockType: string = 'paragraph'): Promise<string> {
         if (!pageId || !content) {
-            return 'Erro: pageId e content são obrigatórios para adicionar conteúdo.';
+            return 'Erro: pageId e content são obrigatórios para adicionar um bloco.';
+        }
+
+        const validTypes = ['paragraph', 'heading_1', 'heading_2', 'heading_3', 'to_do', 'bulleted_list_item'];
+        if (!validTypes.includes(blockType)) {
+            return `Erro: Tipo de bloco inválido. Use: ${validTypes.join(', ')}`;
         }
 
         const block: any = {
@@ -326,30 +345,30 @@ export class NotionSkill implements ISkill {
             type: blockType,
         };
 
-        const richText = [
-            {
-                type: 'text',
-                text: {
-                    content: content,
+        block[blockType] = {
+            rich_text: [
+                {
+                    type: 'text',
+                    text: {
+                        content: content,
+                    },
                 },
-            },
-        ];
+            ],
+        };
 
-        if (['heading_1', 'heading_2', 'heading_3', 'bulleted_list_item', 'paragraph'].includes(blockType)) {
-             block[blockType] = { rich_text: richText };
-        } else if (blockType === 'to_do') {
-            block.to_do = { rich_text: richText, checked: false };
-        } else {
-            // Fallback to paragraph if unknown type
-            block.type = 'paragraph';
-            block.paragraph = { rich_text: richText };
+        // Adiciona suporte a checkbox para to_do (padrão desmarcado)
+        if (blockType === 'to_do') {
+            block[blockType].checked = false;
         }
 
-        await this.notion.blocks.children.append({
-            block_id: pageId,
-            children: [block],
-        });
-
-        return `Conteúdo (${blockType}) adicionado com sucesso ao final da página.`;
+        try {
+            await this.notion.blocks.children.append({
+                block_id: pageId,
+                children: [block],
+            });
+            return `Bloco do tipo "${blockType}" adicionado com sucesso à página ${pageId}.`;
+        } catch (e: any) {
+            return `Erro ao adicionar bloco: ${e.message}`;
+        }
     }
 }
