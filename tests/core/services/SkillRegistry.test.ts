@@ -57,4 +57,25 @@ describe('SkillRegistry', () => {
         const retrieved = registry.get('test_skill');
         expect(retrieved?.description).toBe('Updated description');
     });
+
+    it('should throw error for invalid skill name', () => {
+        const invalidSkill = { ...mockSkill, name: '' as any };
+        expect(() => registry.register(invalidSkill)).toThrow(/Nome obrigatório/);
+    });
+
+    it('should throw error for missing description', () => {
+        const invalidSkill = { ...mockSkill, description: '' as any };
+        expect(() => registry.register(invalidSkill)).toThrow(/Descrição obrigatória/);
+    });
+
+    it('should register multiple skills', () => {
+        const skill1 = { ...mockSkill, name: 'skill1' };
+        const skill2 = { ...mockSkill, name: 'skill2' };
+        
+        registry.registerAll([skill1, skill2]);
+        
+        expect(registry.get('skill1')).toBeDefined();
+        expect(registry.get('skill2')).toBeDefined();
+        expect(registry.getAll()).toHaveLength(2);
+    });
 });
