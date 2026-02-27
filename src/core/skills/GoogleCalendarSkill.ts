@@ -10,6 +10,9 @@ interface CalendarParams {
     location?: string;
     startTime?: string; // ISO 8601
     endTime?: string;   // ISO 8601
+    timeMin?: string;   // ISO 8601 (para listagem)
+    timeMax?: string;   // ISO 8601 (para listagem)
+    timeZone?: string;  // Default: America/Sao_Paulo
     eventId?: string;
     maxResults?: number;
     attendees?: string[];
@@ -17,7 +20,7 @@ interface CalendarParams {
 
 export class GoogleCalendarSkill implements ISkill {
     name = 'google_calendar';
-    description = 'Gerencia eventos no Google Calendar. Permite listar, criar, atualizar e excluir eventos.';
+    description = 'Gerencia eventos no Google Calendar. Permite listar, criar, atualizar e excluir eventos com suporte a fusos horários.';
     
     parameters = {
         type: 'object',
@@ -41,11 +44,23 @@ export class GoogleCalendarSkill implements ISkill {
             },
             startTime: {
                 type: 'string',
-                description: 'Data e hora de início no formato ISO 8601 (ex: 2023-10-27T10:00:00-03:00).'
+                description: 'Data e hora de início no formato ISO 8601 (ex: 2023-10-27T10:00:00).'
             },
             endTime: {
                 type: 'string',
                 description: 'Data e hora de término no formato ISO 8601.'
+            },
+            timeMin: {
+                type: 'string',
+                description: 'Data mínima para listagem de eventos (ISO 8601).'
+            },
+            timeMax: {
+                type: 'string',
+                description: 'Data máxima para listagem de eventos (ISO 8601).'
+            },
+            timeZone: {
+                type: 'string',
+                description: 'Fuso horário (ex: America/Sao_Paulo, UTC). Default: America/Sao_Paulo.'
             },
             eventId: {
                 type: 'string',
@@ -65,6 +80,7 @@ export class GoogleCalendarSkill implements ISkill {
     };
 
     private calendar: calendar_v3.Calendar;
+    private readonly defaultTimeZone = 'America/Sao_Paulo';
 
     constructor() {
         const auth = new google.auth.OAuth2(
@@ -88,7 +104,7 @@ export class GoogleCalendarSkill implements ISkill {
         try {
             switch (params.action) {
                 case 'list':
-                    return await this.listEvents(params.maxResults);
+                    return await this.listEvents(params);
                 case 'create':
                     return await this.createEvent(params);
                 case 'update':
@@ -104,18 +120,30 @@ export class GoogleCalendarSkill implements ISkill {
         }
     }
 
-    private async listEvents(maxResults: number = 10): Promise<string> {
-        const res = await this.calendar.events.list({
+    private async listEvents(params: CalendarParams): Promise<string> {
+        const timeMin = params.timeMin || new Date().toISOString();
+        const timeMax = params.timeMax; // Opcional
+        const maxResults = params.maxResults || 10;
+        const timeZone = params.timeZone || this.defaultTimeZone;
+
+        const requestParams: calendar_v3.Params$Resource$Events$List = {
             calendarId: 'primary',
-            timeMin: new Date().toISOString(),
+            timeMin: timeMin,
             maxResults: maxResults,
             singleEvents: true,
             orderBy: 'startTime',
-        });
+            timeZone: timeZone
+        };
+
+        if (timeMax) {
+            requestParams.timeMax = timeMax;
+        }
+
+        const res = await this.calendar.events.list(requestParams);
 
         const events = res.data.items;
         if (!events || events.length === 0) {
-            return 'Nenhum evento encontrado para os próximos dias.';
+            return `Nenhum evento encontrado a partir de ${timeMin}.`;
         }
 
         return events.map((event: any, i: number) => {
@@ -129,17 +157,19 @@ export class GoogleCalendarSkill implements ISkill {
             return 'Erro: summary, startTime e endTime são obrigatórios para criar um evento.';
         }
 
+        const timeZone = params.timeZone || this.defaultTimeZone;
+
         const event = {
             summary: params.summary,
             description: params.description,
             location: params.location,
             start: {
                 dateTime: params.startTime,
-                timeZone: 'America/Sao_Paulo', // Pode ser parametrizável futuramente
+                timeZone: timeZone,
             },
             end: {
                 dateTime: params.endTime,
-                timeZone: 'America/Sao_Paulo',
+                timeZone: timeZone,
             },
             attendees: params.attendees?.map(email => ({ email })),
         };
@@ -157,17 +187,14 @@ export class GoogleCalendarSkill implements ISkill {
             return 'Erro: eventId é obrigatório para atualizar um evento.';
         }
 
-        // Primeiro, buscamos o evento existente para preservar campos não alterados
-        // Mas para simplificar, a API do Google permite patch.
-        // Se usarmos 'update', precisamos passar o recurso completo. Se usarmos 'patch', apenas os campos alterados.
-        // Vamos usar patch para flexibilidade.
-
+        const timeZone = params.timeZone || 'America/Sao_Paulo';
         const patchBody: any = {};
+        
         if (params.summary) patchBody.summary = params.summary;
         if (params.description) patchBody.description = params.description;
         if (params.location) patchBody.location = params.location;
-        if (params.startTime) patchBody.start = { dateTime: params.startTime };
-        if (params.endTime) patchBody.end = { dateTime: params.endTime };
+        if (params.startTime) patchBody.start = { dateTime: params.startTime, timeZone };
+        if (params.endTime) patchBody.end = { dateTime: params.endTime, timeZone };
         if (params.attendees) patchBody.attendees = params.attendees.map(email => ({ email }));
 
         const res = await this.calendar.events.patch({
