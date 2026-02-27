@@ -4,25 +4,29 @@ import { config } from '../../config/env';
 import { logger } from '../../utils/logger';
 
 interface NotionParams {
-    action: 'search' | 'create_page' | 'get_page_content' | 'append_block' | 'archive_page' | 'query_database';
+    action: 'search' | 'create_page' | 'get_page_content' | 'append_block' | 'archive_page' | 'query_database' | 'update_page';
     query?: string;
     databaseId?: string;
     pageId?: string;
     title?: string;
     content?: string;
-    filter_status?: string; // Status para filtrar em query_database
+    filter_status?: string; // Legacy: manter para retrocompatibilidade
+    filter_property?: string; // Novo: Nome da propriedade para filtrar
+    filter_value?: string; // Novo: Valor para filtrar (texto exato ou opção)
+    block_type?: 'paragraph' | 'heading_1' | 'heading_2' | 'heading_3' | 'to_do' | 'bulleted_list_item'; // Novo
+    properties?: Record<string, any>; // Novo: Propriedades para update/create
 }
 
 export class NotionSkill implements ISkill {
     name = 'notion';
-    description = 'Integração com o Notion para gerenciar páginas e bancos de dados. Permite buscar, criar, ler, editar e arquivar páginas.';
+    description = 'Integração com o Notion para gerenciar páginas e bancos de dados. Permite buscar, criar, ler, editar propriedades e arquivar páginas.';
 
     parameters = {
         type: 'object',
         properties: {
             action: {
                 type: 'string',
-                enum: ['search', 'create_page', 'get_page_content', 'append_block', 'archive_page', 'query_database'],
+                enum: ['search', 'create_page', 'get_page_content', 'append_block', 'archive_page', 'query_database', 'update_page'],
                 description: 'A ação a ser realizada no Notion.'
             },
             query: {
@@ -35,7 +39,7 @@ export class NotionSkill implements ISkill {
             },
             pageId: {
                 type: 'string',
-                description: 'ID da página (para get_page_content, append_block ou archive_page).'
+                description: 'ID da página (para get_page_content, append_block, archive_page ou update_page).'
             },
             title: {
                 type: 'string',
@@ -47,7 +51,24 @@ export class NotionSkill implements ISkill {
             },
             filter_status: {
                 type: 'string',
-                description: 'Filtrar por status em query_database (ex: "Done", "In Progress").'
+                description: 'Filtrar por status em query_database (ex: "Done").'
+            },
+            filter_property: {
+                type: 'string',
+                description: 'Nome da propriedade para filtrar em query_database (ex: "Priority", "Category").'
+            },
+            filter_value: {
+                type: 'string',
+                description: 'Valor exato para o filtro (ex: "High", "Personal").'
+            },
+            block_type: {
+                type: 'string',
+                enum: ['paragraph', 'heading_1', 'heading_2', 'heading_3', 'to_do', 'bulleted_list_item'],
+                description: 'Tipo do bloco a ser adicionado (padrão: paragraph).'
+            },
+            properties: {
+                type: 'object',
+                description: 'Objeto JSON com propriedades para atualizar (ex: {"Status": {"status": {"name": "Done"}}}).'
             }
         },
         required: ['action']
@@ -86,13 +107,15 @@ export class NotionSkill implements ISkill {
                 case 'get_page_content':
                     return await this.getPageContent(params.pageId);
                 case 'append_block':
-                    return await this.appendBlock(params.pageId, params.content);
+                    return await this.appendBlock(params.pageId, params.content, params.block_type);
                 case 'archive_page':
                     return await this.archivePage(params.pageId);
                 case 'query_database':
-                    return await this.queryDatabase(params.databaseId, params.filter_status);
+                    return await this.queryDatabase(params.databaseId, params.filter_status, params.filter_property, params.filter_value);
+                case 'update_page':
+                    return await this.updatePageProperties(params.pageId, params.properties);
                 default:
-                    return 'Ação inválida. Use: search, create_page, get_page_content, append_block, archive_page, ou query_database.';
+                    return 'Ação inválida. Use: search, create_page, get_page_content, append_block, archive_page, query_database ou update_page.';
             }
         } catch (error: any) {
             logger.error('Erro na NotionSkill:', error);
@@ -111,7 +134,7 @@ export class NotionSkill implements ISkill {
         return `Página ${pageId} arquivada com sucesso.`;
     }
 
-    private async queryDatabase(databaseId?: string, filterStatus?: string): Promise<string> {
+    private async queryDatabase(databaseId?: string, filterStatus?: string, filterProperty?: string, filterValue?: string): Promise<string> {
         if (!databaseId) return 'Erro: databaseId é obrigatório para consultar um banco de dados.';
 
         const queryParams: any = {
@@ -119,9 +142,22 @@ export class NotionSkill implements ISkill {
             page_size: 10,
         };
 
+        if (filterProperty && filterValue) {
+            // Suporte genérico a filtros de texto ou select
+            queryParams.filter = {
+                property: filterProperty,
+                rich_text: {
+                    contains: filterValue,
+                },
+            };
+            // Tenta adivinhar se é select/status se falhar (melhoria futura: verificar tipo da propriedade)
+            // Por enquanto, vamos assumir rich_text ou title como padrão seguro para busca genérica,
+            // mas se o usuário passar filter_status (legacy), mantemos o comportamento anterior.
+        } 
+        
         if (filterStatus) {
             queryParams.filter = {
-                property: 'Status', // Assume convenção de nome "Status"
+                property: 'Status',
                 status: {
                     equals: filterStatus,
                 },
@@ -144,6 +180,22 @@ export class NotionSkill implements ISkill {
             
             return `- ${title} (ID: ${page.id})`;
         }).join('\n');
+    }
+
+    private async updatePageProperties(pageId?: string, properties?: Record<string, any>): Promise<string> {
+        if (!pageId || !properties) {
+            return 'Erro: pageId e properties são obrigatórios para atualizar uma página.';
+        }
+
+        try {
+            await this.notion.pages.update({
+                page_id: pageId,
+                properties: properties,
+            });
+            return `Página ${pageId} atualizada com sucesso.`;
+        } catch (e: any) {
+            return `Erro ao atualizar página: ${e.message}`;
+        }
     }
 
     private async search(query?: string): Promise<string> {
@@ -264,31 +316,40 @@ export class NotionSkill implements ISkill {
         return content || 'Página vazia ou conteúdo não suportado (apenas texto simples é exibido).';
     }
 
-    private async appendBlock(pageId?: string, content?: string): Promise<string> {
+    private async appendBlock(pageId?: string, content?: string, blockType: string = 'paragraph'): Promise<string> {
         if (!pageId || !content) {
             return 'Erro: pageId e content são obrigatórios para adicionar conteúdo.';
         }
 
+        const block: any = {
+            object: 'block',
+            type: blockType,
+        };
+
+        const richText = [
+            {
+                type: 'text',
+                text: {
+                    content: content,
+                },
+            },
+        ];
+
+        if (['heading_1', 'heading_2', 'heading_3', 'bulleted_list_item', 'paragraph'].includes(blockType)) {
+             block[blockType] = { rich_text: richText };
+        } else if (blockType === 'to_do') {
+            block.to_do = { rich_text: richText, checked: false };
+        } else {
+            // Fallback to paragraph if unknown type
+            block.type = 'paragraph';
+            block.paragraph = { rich_text: richText };
+        }
+
         await this.notion.blocks.children.append({
             block_id: pageId,
-            children: [
-                {
-                    object: 'block',
-                    type: 'paragraph',
-                    paragraph: {
-                        rich_text: [
-                            {
-                                type: 'text',
-                                text: {
-                                    content: content,
-                                },
-                            },
-                        ],
-                    },
-                },
-            ],
+            children: [block],
         });
 
-        return 'Conteúdo adicionado com sucesso ao final da página.';
+        return `Conteúdo (${blockType}) adicionado com sucesso ao final da página.`;
     }
 }

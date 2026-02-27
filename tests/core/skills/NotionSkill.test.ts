@@ -151,6 +151,79 @@ describe('NotionSkill', () => {
         expect(result).toContain('Tarefa Importante');
     });
 
+    it('should query database with generic filter', async () => {
+        mockDatabasesQuery.mockResolvedValue({
+            results: [
+                {
+                    id: 'task-2',
+                    properties: {
+                        Name: { type: 'title', title: [{ plain_text: 'Projeto X' }] },
+                    },
+                },
+            ],
+        });
+
+        const result = await skill.execute({
+            action: 'query_database',
+            databaseId: 'db-projects',
+            filter_property: 'Category',
+            filter_value: 'Work',
+        });
+
+        expect(mockDatabasesQuery).toHaveBeenCalledWith(expect.objectContaining({
+            database_id: 'db-projects',
+            filter: {
+                property: 'Category',
+                rich_text: { contains: 'Work' },
+            },
+        }));
+        expect(result).toContain('Projeto X');
+    });
+
+    it('should update page properties', async () => {
+        mockPagesUpdate.mockResolvedValue({ id: 'page-123' });
+
+        const result = await skill.execute({
+            action: 'update_page',
+            pageId: 'page-123',
+            properties: {
+                "Status": { status: { name: "Done" } }
+            }
+        });
+
+        expect(mockPagesUpdate).toHaveBeenCalledWith({
+            page_id: 'page-123',
+            properties: {
+                "Status": { status: { name: "Done" } }
+            },
+        });
+        expect(result).toContain('atualizada com sucesso');
+    });
+
+    it('should append different block types', async () => {
+        mockBlocksChildrenAppend.mockResolvedValue({});
+
+        await skill.execute({
+            action: 'append_block',
+            pageId: 'page-123',
+            content: 'Check item',
+            block_type: 'to_do',
+        });
+
+        expect(mockBlocksChildrenAppend).toHaveBeenCalledWith(expect.objectContaining({
+            block_id: 'page-123',
+            children: expect.arrayContaining([
+                expect.objectContaining({
+                    type: 'to_do',
+                    to_do: expect.objectContaining({
+                        rich_text: [{ type: 'text', text: { content: 'Check item' } }],
+                        checked: false,
+                    })
+                })
+            ])
+        }));
+    });
+
     it('should handle errors gracefully', async () => {
         mockSearch.mockRejectedValue(new Error('API Error'));
 
