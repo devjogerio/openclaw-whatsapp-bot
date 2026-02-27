@@ -74,13 +74,14 @@ export class DateSkill implements ISkill {
             timeZone: timezone,
         };
 
+        if (format === 'ISO') {
+            // Retorna formato ISO-like ajustado ao fuso horário (YYYY-MM-DDTHH:mm:ss)
+            // Usamos 'sv-SE' pois é similar ao ISO 8601
+            const isoString = date.toLocaleString('sv-SE', { ...options, hour12: false });
+            return isoString.replace(' ', 'T') + ` (Fuso: ${timezone})`;
+        }
+
         switch (format) {
-            case 'ISO':
-                // ISO sempre é UTC, mas podemos simular o offset se necessário, 
-                // porém new Date().toISOString() é sempre UTC.
-                // Se o usuário quer ISO com offset, é complexo em JS puro sem bibliotecas.
-                // Retornaremos ISO string padrão (UTC) e avisaremos, ou string formatada.
-                return date.toISOString();
             case 'full':
                 options.weekday = 'long';
                 options.year = 'numeric';

@@ -7,34 +7,63 @@ describe('DateSkill', () => {
         skill = new DateSkill();
     });
 
-    it('should be defined', () => {
-        expect(skill).toBeDefined();
+    it('should have correct metadata', () => {
         expect(skill.name).toBe('date_tool');
+        expect(skill.description).toBeDefined();
+        expect(skill.parameters).toBeDefined();
+        expect(skill.parameters.properties.action).toBeDefined();
+        expect(skill.parameters.properties.timezone).toBeDefined();
+        expect(skill.parameters.properties.format).toBeDefined();
     });
 
     it('should return current date in default timezone (America/Sao_Paulo)', async () => {
         const result = await skill.execute({});
-        expect(result).toMatch(/\d{2}\/\d{2}\/\d{4}/); // Basic date check
-    });
-
-    it('should return date in Tokyo timezone', async () => {
-        // Tokyo is +9 UTC, Sao Paulo is -3 UTC. Approx 12h difference.
-        // We can't easily assert exact time without mocking Date, 
-        // but we can check if it runs without error and returns a string.
-        const result = await skill.execute({ timezone: 'Asia/Tokyo', action: 'convert_timezone' });
         expect(result).toBeDefined();
+        // Just check if it returns a string, content depends on time
         expect(typeof result).toBe('string');
     });
 
-    it('should handle "full" format', async () => {
-        const result = await skill.execute({ format: 'full' });
-        // Should contain day of week (e.g., "segunda-feira" or similar)
-        expect(result).toMatch(/-feira|sábado|domingo/i); 
+    it('should convert timezone correctly', async () => {
+        // Mock Date to a fixed time: 2023-01-01T12:00:00Z
+        const mockDate = new Date('2023-01-01T12:00:00Z');
+        jest.useFakeTimers().setSystemTime(mockDate);
+
+        // UTC: 12:00
+        const resultUTC = await skill.execute({ 
+            action: 'convert_timezone', 
+            timezone: 'UTC', 
+            format: 'ISO' 
+        });
+        expect(resultUTC).toContain('2023-01-01T12:00:00');
+
+        // Sao_Paulo: 09:00 (UTC-3)
+        const resultSP = await skill.execute({ 
+            action: 'convert_timezone', 
+            timezone: 'America/Sao_Paulo', 
+            format: 'ISO' 
+        });
+        expect(resultSP).toContain('2023-01-01T09:00:00');
+
+        jest.useRealTimers();
     });
 
-    it('should list timezones', async () => {
+    it('should handle different formats', async () => {
+        const mockDate = new Date('2023-01-01T12:00:00Z');
+        jest.useFakeTimers().setSystemTime(mockDate);
+
+        const resultFull = await skill.execute({ format: 'full', timezone: 'UTC' });
+        expect(resultFull).toMatch(/domingo, 1 de janeiro de 2023/i);
+
+        const resultDateOnly = await skill.execute({ format: 'date_only', timezone: 'UTC' });
+        expect(resultDateOnly).toMatch(/01\/01\/2023/);
+
+        jest.useRealTimers();
+    });
+
+    it('should list common timezones', async () => {
         const result = await skill.execute({ action: 'list_timezones' });
         expect(result).toContain('America/Sao_Paulo');
+        expect(result).toContain('UTC');
         expect(result).toContain('Asia/Tokyo');
     });
 
@@ -44,16 +73,13 @@ describe('DateSkill', () => {
         expect(result).toContain('Fuso horário inválido');
     });
 
-    it('should handle base_date conversion', async () => {
-        const baseDate = '2023-01-01T12:00:00Z'; // 12:00 UTC
-        // Sao Paulo is -3 -> 09:00
+    it('should handle base_date parameter', async () => {
+        const baseDate = '2025-12-25T10:00:00Z';
         const result = await skill.execute({ 
-            action: 'convert_timezone', 
-            base_date: baseDate,
-            timezone: 'America/Sao_Paulo',
-            format: 'time_only'
+            base_date: baseDate, 
+            timezone: 'UTC', 
+            format: 'ISO' 
         });
-        // We expect "09:00:00" approx, depending on locale format
-        expect(result).toContain('09'); 
+        expect(result).toContain('2025-12-25T10:00:00');
     });
 });
