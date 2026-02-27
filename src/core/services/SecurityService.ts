@@ -6,12 +6,16 @@ import { logger } from '../../utils/logger';
  */
 export class SecurityService {
     private allowedNumbers: Set<string>;
+    private rateLimitMap: Map<string, number[]>;
+    private readonly RATE_LIMIT_WINDOW = 60 * 1000; // 1 minuto
+    private readonly MAX_REQUESTS = 10; // 10 requisições por minuto
 
     constructor() {
         // Normaliza os números da config para garantir consistência
         this.allowedNumbers = new Set(
             config.whitelistNumbers.map(num => this.normalizeNumber(num))
         );
+        this.rateLimitMap = new Map();
         logger.info(`SecurityService iniciado com ${this.allowedNumbers.size} números permitidos.`);
     }
 
@@ -24,10 +28,61 @@ export class SecurityService {
         const allowed = this.allowedNumbers.has(normalized);
         
         if (!allowed) {
-            logger.warn(`Acesso negado para o número: ${phoneNumber} (Normalizado: ${normalized})`);
+            logger.warn(`Acesso negado para o número: ${this.maskSensitiveData(phoneNumber)} (Normalizado: ${this.maskSensitiveData(normalized)})`);
         }
         
         return allowed;
+    }
+
+    /**
+     * Verifica se o usuário excedeu o limite de requisições.
+     * Retorna true se estiver dentro do limite, false se excedeu.
+     */
+    checkRateLimit(phoneNumber: string): boolean {
+        const normalized = this.normalizeNumber(phoneNumber);
+        const now = Date.now();
+        
+        let timestamps = this.rateLimitMap.get(normalized) || [];
+        
+        // Remove timestamps antigos fora da janela
+        timestamps = timestamps.filter(ts => now - ts < this.RATE_LIMIT_WINDOW);
+        
+        if (timestamps.length >= this.MAX_REQUESTS) {
+            logger.warn(`Rate limit excedido para: ${this.maskSensitiveData(normalized)}`);
+            return false;
+        }
+        
+        timestamps.push(now);
+        this.rateLimitMap.set(normalized, timestamps);
+        return true;
+    }
+
+    /**
+     * Mascara dados sensíveis (email, CPF, telefone) para logs.
+     */
+    maskSensitiveData(data: string): string {
+        // Mascara emails
+        if (data.includes('@') && !data.includes('whatsapp.net')) {
+             const [user, domain] = data.split('@');
+             return `${user.substring(0, 2)}***@${domain}`;
+        }
+        
+        // Mascara telefones (mantém últimos 4 dígitos)
+        if (data.length > 8) {
+            return `****${data.slice(-4)}`;
+        }
+        
+        return data;
+    }
+
+    /**
+     * Sanitiza entrada de texto para evitar injeção básica.
+     * Remove caracteres de controle e tags HTML simples.
+     */
+    sanitizeInput(input: string): string {
+        return input
+            .replace(/<[^>]*>/g, '') // Remove tags HTML
+            .replace(/[\x00-\x1F\x7F-\x9F]/g, ''); // Remove caracteres de controle
     }
 
     /**
