@@ -43,10 +43,16 @@ O bot possui um sistema extensível de skills que permite interagir com o mundo 
 
 ### 🔒 Segurança & Arquitetura
 - **Clean Architecture**: Separação clara entre Core, Infraestrutura e Interfaces.
-- **Integração Robusta**: Implementação de *Circuit Breaker*, *Retry com Backoff Exponencial* e *Caching* (TTL 1h) para chamadas de API.
+- **Integração Robusta**:
+  - **WAHA Client**: Implementação de *Retry com Backoff Exponencial* para garantir entrega de mensagens mesmo em instabilidade de rede.
+  - **Skill Registry**: Validação rigorosa de skills e registro em lote para inicialização rápida e segura.
+  - **Cache Services**: Padrão *Get-Or-Set* para otimizar chamadas de dados e reduzir latência.
 - **Whitelist de Usuários**: Apenas números autorizados (configurados no `.env`) podem interagir com o bot.
 - **Memória Persistente**: Armazenamento local seguro via SQLite, mantendo o contexto das conversas mesmo após reinicializações.
 - **Microserviços**: Arquitetura desacoplada utilizando containers Docker.
+
+## 📈 Roadmap e Planejamento
+Consulte o [Plano de Ação da Fase 2](docs/FASE_2_PLAN.md) para detalhes sobre os próximos passos de consolidação, observabilidade e escala.
 
 ## 🛠 Tecnologias Utilizadas
 
