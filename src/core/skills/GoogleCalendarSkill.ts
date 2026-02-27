@@ -170,6 +170,10 @@ export class GoogleCalendarSkill implements ISkill {
         if (params.endTime) patchBody.end = { dateTime: params.endTime };
         if (params.attendees) patchBody.attendees = params.attendees.map(email => ({ email }));
 
+        if (Object.keys(patchBody).length === 0) {
+            return 'Nenhum campo para atualizar fornecido.';
+        }
+
         const res = await this.calendar.events.patch({
             calendarId: 'primary',
             eventId: params.eventId,
