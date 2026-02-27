@@ -4,24 +4,25 @@ import { config } from '../../config/env';
 import { logger } from '../../utils/logger';
 
 interface NotionParams {
-    action: 'search' | 'create_page' | 'get_page_content' | 'append_block';
+    action: 'search' | 'create_page' | 'get_page_content' | 'append_block' | 'archive_page' | 'query_database';
     query?: string;
     databaseId?: string;
     pageId?: string;
     title?: string;
     content?: string;
+    filter_status?: string; // Status para filtrar em query_database
 }
 
 export class NotionSkill implements ISkill {
     name = 'notion';
-    description = 'Integração com o Notion para gerenciar páginas e bancos de dados. Permite buscar, criar páginas e adicionar conteúdo.';
+    description = 'Integração com o Notion para gerenciar páginas e bancos de dados. Permite buscar, criar, ler, editar e arquivar páginas.';
 
     parameters = {
         type: 'object',
         properties: {
             action: {
                 type: 'string',
-                enum: ['search', 'create_page', 'get_page_content', 'append_block'],
+                enum: ['search', 'create_page', 'get_page_content', 'append_block', 'archive_page', 'query_database'],
                 description: 'A ação a ser realizada no Notion.'
             },
             query: {
@@ -30,11 +31,11 @@ export class NotionSkill implements ISkill {
             },
             databaseId: {
                 type: 'string',
-                description: 'ID do banco de dados onde a página será criada (para action="create_page").'
+                description: 'ID do banco de dados (para create_page ou query_database).'
             },
             pageId: {
                 type: 'string',
-                description: 'ID da página (para get_page_content ou append_block).'
+                description: 'ID da página (para get_page_content, append_block ou archive_page).'
             },
             title: {
                 type: 'string',
@@ -43,6 +44,10 @@ export class NotionSkill implements ISkill {
             content: {
                 type: 'string',
                 description: 'Conteúdo de texto a ser adicionado (para create_page ou append_block).'
+            },
+            filter_status: {
+                type: 'string',
+                description: 'Filtrar por status em query_database (ex: "Done", "In Progress").'
             }
         },
         required: ['action']
@@ -82,13 +87,63 @@ export class NotionSkill implements ISkill {
                     return await this.getPageContent(params.pageId);
                 case 'append_block':
                     return await this.appendBlock(params.pageId, params.content);
+                case 'archive_page':
+                    return await this.archivePage(params.pageId);
+                case 'query_database':
+                    return await this.queryDatabase(params.databaseId, params.filter_status);
                 default:
-                    return 'Ação inválida. Use: search, create_page, get_page_content, ou append_block.';
+                    return 'Ação inválida. Use: search, create_page, get_page_content, append_block, archive_page, ou query_database.';
             }
         } catch (error: any) {
             logger.error('Erro na NotionSkill:', error);
             return `Erro ao executar ação ${params.action}: ${error.message}`;
         }
+    }
+
+    private async archivePage(pageId?: string): Promise<string> {
+        if (!pageId) return 'Erro: pageId é obrigatório para arquivar uma página.';
+        
+        await this.notion.pages.update({
+            page_id: pageId,
+            archived: true,
+        });
+
+        return `Página ${pageId} arquivada com sucesso.`;
+    }
+
+    private async queryDatabase(databaseId?: string, filterStatus?: string): Promise<string> {
+        if (!databaseId) return 'Erro: databaseId é obrigatório para consultar um banco de dados.';
+
+        const queryParams: any = {
+            database_id: databaseId,
+            page_size: 10,
+        };
+
+        if (filterStatus) {
+            queryParams.filter = {
+                property: 'Status', // Assume convenção de nome "Status"
+                status: {
+                    equals: filterStatus,
+                },
+            };
+        }
+
+        const response = await (this.notion.databases as any).query(queryParams);
+
+        if (response.results.length === 0) {
+            return 'Nenhum item encontrado no banco de dados com os filtros aplicados.';
+        }
+
+        return response.results.map((page: any) => {
+            let title = 'Sem título';
+            // Tenta encontrar a propriedade de título independentemente do nome
+            const titleProp = Object.values(page.properties).find((p: any) => p.type === 'title') as any;
+            if (titleProp && titleProp.title && titleProp.title.length > 0) {
+                title = titleProp.title[0].plain_text;
+            }
+            
+            return `- ${title} (ID: ${page.id})`;
+        }).join('\n');
     }
 
     private async search(query?: string): Promise<string> {
