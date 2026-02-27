@@ -8,16 +8,17 @@ interface CalendarParams {
     summary?: string;
     description?: string;
     location?: string;
-    startTime?: string; // ISO 8601
-    endTime?: string;   // ISO 8601
+    startTime?: string; // ISO 8601 (Create/Update: Start of event. List: Filter start range)
+    endTime?: string;   // ISO 8601 (Create/Update: End of event. List: Filter end range)
     eventId?: string;
     maxResults?: number;
     attendees?: string[];
+    query?: string;     // Text search for events
 }
 
 export class GoogleCalendarSkill implements ISkill {
     name = 'google_calendar';
-    description = 'Gerencia eventos no Google Calendar. Permite listar, criar, atualizar e excluir eventos.';
+    description = 'Gerencia eventos no Google Calendar. Permite listar (com filtros), criar, atualizar e excluir eventos.';
     
     parameters = {
         type: 'object',
@@ -41,11 +42,11 @@ export class GoogleCalendarSkill implements ISkill {
             },
             startTime: {
                 type: 'string',
-                description: 'Data e hora de início no formato ISO 8601 (ex: 2023-10-27T10:00:00-03:00).'
+                description: 'Data e hora de início no formato ISO 8601. Na listagem, serve como filtro inicial (timeMin).'
             },
             endTime: {
                 type: 'string',
-                description: 'Data e hora de término no formato ISO 8601.'
+                description: 'Data e hora de término no formato ISO 8601. Na listagem, serve como filtro final (timeMax).'
             },
             eventId: {
                 type: 'string',
@@ -59,6 +60,10 @@ export class GoogleCalendarSkill implements ISkill {
                 type: 'array',
                 items: { type: 'string' },
                 description: 'Lista de emails dos participantes.'
+            },
+            query: {
+                type: 'string',
+                description: 'Termo de busca para filtrar eventos por texto (apenas na ação list).'
             }
         },
         required: ['action']
@@ -88,7 +93,7 @@ export class GoogleCalendarSkill implements ISkill {
         try {
             switch (params.action) {
                 case 'list':
-                    return await this.listEvents(params.maxResults);
+                    return await this.listEvents(params);
                 case 'create':
                     return await this.createEvent(params);
                 case 'update':
@@ -104,23 +109,35 @@ export class GoogleCalendarSkill implements ISkill {
         }
     }
 
-    private async listEvents(maxResults: number = 10): Promise<string> {
-        const res = await this.calendar.events.list({
+    private async listEvents(params: CalendarParams): Promise<string> {
+        const { maxResults, startTime, endTime, query } = params;
+        
+        const requestParams: any = {
             calendarId: 'primary',
-            timeMin: new Date().toISOString(),
-            maxResults: maxResults,
+            timeMin: startTime || new Date().toISOString(),
+            maxResults: maxResults || 10,
             singleEvents: true,
             orderBy: 'startTime',
-        });
+        };
+
+        if (endTime) requestParams.timeMax = endTime;
+        if (query) requestParams.q = query;
+
+        const res = await this.calendar.events.list(requestParams);
 
         const events = res.data.items;
         if (!events || events.length === 0) {
-            return 'Nenhum evento encontrado para os próximos dias.';
+            let msg = 'Nenhum evento encontrado';
+            if (startTime) msg += ` a partir de ${startTime}`;
+            if (endTime) msg += ` até ${endTime}`;
+            if (query) msg += ` com o termo "${query}"`;
+            return msg + '.';
         }
 
         return events.map((event: any, i: number) => {
             const start = event.start.dateTime || event.start.date;
-            return `${i + 1}. [${start}] ${event.summary} (ID: ${event.id})`;
+            const end = event.end.dateTime || event.end.date;
+            return `${i + 1}. [${start} - ${end}] ${event.summary} (ID: ${event.id})`;
         }).join('\n');
     }
 
