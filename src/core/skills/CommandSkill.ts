@@ -45,7 +45,7 @@ export class CommandSkill implements ISkill {
             },
             timeout: {
                 type: 'number',
-                description: 'Tempo máximo de execução em milissegundos (padrão: 10000).',
+                description: 'Tempo máximo de execução em milissegundos (padrão: 10000, máx: 60000).',
                 minimum: 1000,
                 maximum: 60000
             }
@@ -53,7 +53,7 @@ export class CommandSkill implements ISkill {
         required: ['command']
     };
 
-    private execPromise(command: string, timeout: number): Promise<{ stdout: string; stderr: string }> {
+    private execPromise(command: string, timeout: number = 10000): Promise<{ stdout: string; stderr: string }> {
         return new Promise((resolve, reject) => {
             exec(command, { timeout, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
                 if (error) {
@@ -72,7 +72,7 @@ export class CommandSkill implements ISkill {
         try {
             const command = args.command.trim();
             const binary = command.split(' ')[0];
-            const timeout = args.timeout || 10000;
+            const timeout = Math.min(Math.max(args.timeout || 10000, 1000), 60000); // Entre 1s e 60s
 
             if (!this.ALLOWED_COMMANDS.includes(binary)) {
                 logger.warn(`[CommandSkill] Tentativa de execução de comando não permitido: ${command}`);
