@@ -82,4 +82,66 @@ describe('DateSkill', () => {
         });
         expect(result).toContain('2025-12-25T10:00:00');
     });
+
+    it('should calculate date correctly (add_time)', async () => {
+        const baseDate = '2023-01-01T12:00:00Z';
+        // Add 2 days
+        const resultDays = await skill.execute({
+            action: 'add_time',
+            base_date: baseDate,
+            amount: 2,
+            unit: 'days',
+            format: 'ISO',
+            timezone: 'UTC'
+        });
+        expect(resultDays).toContain('2023-01-03T12:00:00');
+
+        // Add 3 hours
+        const resultHours = await skill.execute({
+            action: 'add_time',
+            base_date: baseDate,
+            amount: 3,
+            unit: 'hours',
+            format: 'ISO',
+            timezone: 'UTC'
+        });
+        expect(resultHours).toContain('2023-01-01T15:00:00');
+    });
+
+    it('should calculate date correctly (subtract_time)', async () => {
+        const baseDate = '2023-01-01T12:00:00Z';
+        // Subtract 1 week
+        const resultWeeks = await skill.execute({
+            action: 'subtract_time',
+            base_date: baseDate,
+            amount: 1,
+            unit: 'weeks',
+            format: 'ISO',
+            timezone: 'UTC'
+        });
+        // 2022-12-25
+        expect(resultWeeks).toContain('2022-12-25T12:00:00');
+
+        // Subtract 30 minutes
+        const resultMinutes = await skill.execute({
+            action: 'subtract_time',
+            base_date: baseDate,
+            amount: 30,
+            unit: 'minutes',
+            format: 'ISO',
+            timezone: 'UTC'
+        });
+        // 11:30
+        expect(resultMinutes).toContain('2023-01-01T11:30:00');
+    });
+
+    it('should validate calculation parameters', async () => {
+        const result = await skill.execute({
+            action: 'add_time',
+            amount: 10
+            // Missing unit
+        });
+        expect(result).toContain('Erro ao executar DateSkill');
+        expect(result).toContain('são obrigatórios');
+    });
 });
