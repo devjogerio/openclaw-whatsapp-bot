@@ -8,17 +8,19 @@ interface CalendarParams {
     summary?: string;
     description?: string;
     location?: string;
-    startTime?: string; // ISO 8601 (Create/Update: Start of event. List: Filter start range)
-    endTime?: string;   // ISO 8601 (Create/Update: End of event. List: Filter end range)
+    startTime?: string; // ISO 8601
+    endTime?: string;   // ISO 8601
     eventId?: string;
     maxResults?: number;
     attendees?: string[];
-    query?: string;     // Text search for events
+    timeZone?: string;  // Fuso horário (padrão: America/Sao_Paulo)
+    timeMin?: string;   // ISO 8601 para filtro de listagem
+    timeMax?: string;   // ISO 8601 para filtro de listagem
 }
 
 export class GoogleCalendarSkill implements ISkill {
     name = 'google_calendar';
-    description = 'Gerencia eventos no Google Calendar. Permite listar (com filtros), criar, atualizar e excluir eventos.';
+    description = 'Gerencia eventos no Google Calendar. Permite listar (com filtros de data), criar, atualizar e excluir eventos, com suporte a fusos horários.';
     
     parameters = {
         type: 'object',
@@ -42,11 +44,11 @@ export class GoogleCalendarSkill implements ISkill {
             },
             startTime: {
                 type: 'string',
-                description: 'Data e hora de início no formato ISO 8601. Na listagem, serve como filtro inicial (timeMin).'
+                description: 'Data e hora de início no formato ISO 8601 (ex: 2023-10-27T10:00:00-03:00).'
             },
             endTime: {
                 type: 'string',
-                description: 'Data e hora de término no formato ISO 8601. Na listagem, serve como filtro final (timeMax).'
+                description: 'Data e hora de término no formato ISO 8601.'
             },
             eventId: {
                 type: 'string',
@@ -61,9 +63,17 @@ export class GoogleCalendarSkill implements ISkill {
                 items: { type: 'string' },
                 description: 'Lista de emails dos participantes.'
             },
-            query: {
+            timeZone: {
                 type: 'string',
-                description: 'Termo de busca para filtrar eventos por texto (apenas na ação list).'
+                description: 'Fuso horário do evento (ex: "America/Sao_Paulo", "UTC"). Padrão: "America/Sao_Paulo".'
+            },
+            timeMin: {
+                type: 'string',
+                description: 'Data mínima para listar eventos (ISO 8601). Padrão: agora.'
+            },
+            timeMax: {
+                type: 'string',
+                description: 'Data máxima para listar eventos (ISO 8601).'
             }
         },
         required: ['action']
@@ -93,7 +103,7 @@ export class GoogleCalendarSkill implements ISkill {
         try {
             switch (params.action) {
                 case 'list':
-                    return await this.listEvents(params);
+                    return await this.listEvents(params.maxResults, params.timeMin, params.timeMax);
                 case 'create':
                     return await this.createEvent(params);
                 case 'update':
@@ -109,35 +119,29 @@ export class GoogleCalendarSkill implements ISkill {
         }
     }
 
-    private async listEvents(params: CalendarParams): Promise<string> {
-        const { maxResults, startTime, endTime, query } = params;
-        
+    private async listEvents(maxResults: number = 10, timeMin?: string, timeMax?: string): Promise<string> {
         const requestParams: any = {
             calendarId: 'primary',
-            timeMin: startTime || new Date().toISOString(),
-            maxResults: maxResults || 10,
+            timeMin: timeMin || new Date().toISOString(),
+            maxResults: maxResults,
             singleEvents: true,
             orderBy: 'startTime',
         };
 
-        if (endTime) requestParams.timeMax = endTime;
-        if (query) requestParams.q = query;
+        if (timeMax) {
+            requestParams.timeMax = timeMax;
+        }
 
         const res = await this.calendar.events.list(requestParams);
 
         const events = res.data.items;
         if (!events || events.length === 0) {
-            let msg = 'Nenhum evento encontrado';
-            if (startTime) msg += ` a partir de ${startTime}`;
-            if (endTime) msg += ` até ${endTime}`;
-            if (query) msg += ` com o termo "${query}"`;
-            return msg + '.';
+            return 'Nenhum evento encontrado no período solicitado.';
         }
 
         return events.map((event: any, i: number) => {
             const start = event.start.dateTime || event.start.date;
-            const end = event.end.dateTime || event.end.date;
-            return `${i + 1}. [${start} - ${end}] ${event.summary} (ID: ${event.id})`;
+            return `${i + 1}. [${start}] ${event.summary} (ID: ${event.id})`;
         }).join('\n');
     }
 
@@ -146,17 +150,19 @@ export class GoogleCalendarSkill implements ISkill {
             return 'Erro: summary, startTime e endTime são obrigatórios para criar um evento.';
         }
 
+        const timeZone = params.timeZone || 'America/Sao_Paulo';
+
         const event = {
             summary: params.summary,
             description: params.description,
             location: params.location,
             start: {
                 dateTime: params.startTime,
-                timeZone: 'America/Sao_Paulo', // Pode ser parametrizável futuramente
+                timeZone: timeZone,
             },
             end: {
                 dateTime: params.endTime,
-                timeZone: 'America/Sao_Paulo',
+                timeZone: timeZone,
             },
             attendees: params.attendees?.map(email => ({ email })),
         };
@@ -174,17 +180,14 @@ export class GoogleCalendarSkill implements ISkill {
             return 'Erro: eventId é obrigatório para atualizar um evento.';
         }
 
-        // Primeiro, buscamos o evento existente para preservar campos não alterados
-        // Mas para simplificar, a API do Google permite patch.
-        // Se usarmos 'update', precisamos passar o recurso completo. Se usarmos 'patch', apenas os campos alterados.
-        // Vamos usar patch para flexibilidade.
-
+        const timeZone = params.timeZone || 'America/Sao_Paulo';
         const patchBody: any = {};
+        
         if (params.summary) patchBody.summary = params.summary;
         if (params.description) patchBody.description = params.description;
         if (params.location) patchBody.location = params.location;
-        if (params.startTime) patchBody.start = { dateTime: params.startTime };
-        if (params.endTime) patchBody.end = { dateTime: params.endTime };
+        if (params.startTime) patchBody.start = { dateTime: params.startTime, timeZone };
+        if (params.endTime) patchBody.end = { dateTime: params.endTime, timeZone };
         if (params.attendees) patchBody.attendees = params.attendees.map(email => ({ email }));
 
         const res = await this.calendar.events.patch({

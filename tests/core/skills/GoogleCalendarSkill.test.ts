@@ -36,13 +36,14 @@ describe('GoogleCalendarSkill', () => {
 
     it('should have correct metadata', () => {
         expect(skill.name).toBe('google_calendar');
-        expect(skill.parameters.properties.query).toBeDefined();
+        expect(skill.parameters.properties.timeMin).toBeDefined();
         expect(skill.parameters.properties.startTime).toBeDefined();
         expect(skill.parameters.properties.endTime).toBeDefined();
     });
 
     it('should list events with default parameters', async () => {
-        mockCalendar.events.list.mockResolvedValue({
+        const mockCalendarList = mockCalendar.events.list;
+        mockCalendarList.mockResolvedValue({
             data: {
                 items: [
                     {
@@ -57,7 +58,7 @@ describe('GoogleCalendarSkill', () => {
 
         const result = await skill.execute({ action: 'list' });
 
-        expect(mockCalendar.events.list).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockCalendarList).toHaveBeenCalledWith(expect.objectContaining({
             calendarId: 'primary',
             maxResults: 10,
             singleEvents: true,
@@ -67,25 +68,25 @@ describe('GoogleCalendarSkill', () => {
         expect(result).toContain('ev1');
     });
 
-    it('should list events with query and time range', async () => {
-        mockCalendar.events.list.mockResolvedValue({ data: { items: [] } });
+    it('should list events with time range', async () => {
+        const mockCalendarList = mockCalendar.events.list;
+        mockCalendarList.mockResolvedValue({ data: { items: [] } });
 
         await skill.execute({
             action: 'list',
-            query: 'Projeto',
-            startTime: '2023-11-01T00:00:00Z',
-            endTime: '2023-11-30T23:59:59Z'
+            timeMin: '2023-11-01T00:00:00Z',
+            timeMax: '2023-11-30T23:59:59Z'
         });
 
-        expect(mockCalendar.events.list).toHaveBeenCalledWith(expect.objectContaining({
-            q: 'Projeto',
+        expect(mockCalendarList).toHaveBeenCalledWith(expect.objectContaining({
             timeMin: '2023-11-01T00:00:00Z',
             timeMax: '2023-11-30T23:59:59Z'
         }));
     });
 
-    it('should create an event', async () => {
-        mockCalendar.events.insert.mockResolvedValue({
+    it('should create an event with timezone', async () => {
+        const mockCalendarInsert = mockCalendar.events.insert;
+        mockCalendarInsert.mockResolvedValue({
             data: {
                 id: 'new_ev',
                 htmlLink: 'http://calendar/event'
@@ -95,37 +96,42 @@ describe('GoogleCalendarSkill', () => {
         const result = await skill.execute({
             action: 'create',
             summary: 'Nova Reunião',
-            startTime: '2023-12-01T10:00:00Z',
-            endTime: '2023-12-01T11:00:00Z'
+            startTime: '2023-12-01T10:00:00',
+            endTime: '2023-12-01T11:00:00',
+            timeZone: 'Europe/London'
         });
 
-        expect(mockCalendar.events.insert).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockCalendarInsert).toHaveBeenCalledWith(expect.objectContaining({
             calendarId: 'primary',
             requestBody: expect.objectContaining({
                 summary: 'Nova Reunião',
-                start: expect.objectContaining({ dateTime: '2023-12-01T10:00:00Z' }),
-                end: expect.objectContaining({ dateTime: '2023-12-01T11:00:00Z' })
+                start: { dateTime: '2023-12-01T10:00:00', timeZone: 'Europe/London' },
+                end: { dateTime: '2023-12-01T11:00:00', timeZone: 'Europe/London' }
             })
         }));
         expect(result).toContain('Evento criado com sucesso');
     });
 
-    it('should update an event', async () => {
-        mockCalendar.events.patch.mockResolvedValue({
+    it('should update an event with timezone', async () => {
+        const mockCalendarPatch = mockCalendar.events.patch;
+        mockCalendarPatch.mockResolvedValue({
             data: { htmlLink: 'http://calendar/event' }
         });
 
         const result = await skill.execute({
             action: 'update',
             eventId: 'ev1',
-            summary: 'Reunião Atualizada'
+            summary: 'Reunião Atualizada',
+            startTime: '2023-12-01T10:00:00',
+            timeZone: 'Asia/Tokyo'
         });
 
-        expect(mockCalendar.events.patch).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockCalendarPatch).toHaveBeenCalledWith(expect.objectContaining({
             calendarId: 'primary',
             eventId: 'ev1',
             requestBody: expect.objectContaining({
-                summary: 'Reunião Atualizada'
+                summary: 'Reunião Atualizada',
+                start: { dateTime: '2023-12-01T10:00:00', timeZone: 'Asia/Tokyo' }
             })
         }));
         expect(result).toContain('Evento atualizado com sucesso');
