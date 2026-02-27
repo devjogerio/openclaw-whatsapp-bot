@@ -64,6 +64,11 @@ export class OpenClawService implements IAIService {
                     temperature: 0.7,
                 });
 
+                // Log Token Usage se disponível
+                if (response.data.usage) {
+                    logger.info(`[OpenClaw] Token Usage (Initial): ${JSON.stringify(response.data.usage)}`);
+                }
+
                 const choice = response.data.choices[0];
                 const message = choice.message;
                 const outputContent = message.content || '';
@@ -73,7 +78,7 @@ export class OpenClawService implements IAIService {
                     return await this.handleToolCalls(messages, message, message.tool_calls);
                 }
                 
-                // Salva no cache se não for tool call
+                // Salva no cache se não for tool call e tiver conteúdo
                 if (outputContent) {
                     await this.cache.set(cacheKey, outputContent, config.cacheTtl);
                 }
@@ -162,6 +167,51 @@ export class OpenClawService implements IAIService {
         });
     }
 
+    /**
+     * Gera uma resposta estruturada em JSON.
+     * Força o modelo a retornar um JSON válido seguindo o schema (se suportado) ou via prompt engineering.
+     */
+    async generateStructuredResponse<T>(prompt: string, context: ChatMessage[] = [], schema?: object): Promise<T> {
+        const systemInstruction = schema 
+            ? `Você deve responder EXCLUSIVAMENTE com um JSON válido seguindo este schema: ${JSON.stringify(schema)}`
+            : 'Você deve responder EXCLUSIVAMENTE com um JSON válido.';
+
+        const enhancedContext: ChatMessage[] = [
+            { role: 'system', content: systemInstruction },
+            ...context
+        ];
+
+        // Tenta usar o modo JSON nativo se possível (depende do modelo/provider)
+        // Aqui assumimos que o provider suporta response_format ou que o prompt é suficiente
+        const responseText = await this.executeWithRetry(async () => {
+            const messages = this.formatMessages(prompt, enhancedContext);
+            
+            const response = await this.client.post('/chat/completions', {
+                model: config.openclawModel,
+                messages,
+                temperature: 0.3, // Temperatura menor para maior determinismo
+                response_format: { type: "json_object" } // Tenta forçar JSON mode
+            });
+
+            return response.data.choices[0].message.content || '{}';
+        });
+
+        try {
+            return JSON.parse(responseText) as T;
+        } catch (e) {
+            logger.error(`[OpenClaw] Falha ao parsear JSON: ${responseText}`);
+            throw new Error('Falha ao gerar resposta estruturada.');
+        }
+    }
+
+    /**
+     * Estima a quantidade de tokens em um texto.
+     * Útil para truncar contextos longos.
+     */
+    public estimateTokens(text: string): number {
+        return Math.ceil(text.length / 4);
+    }
+
     // --- Helpers Privados ---
 
     private async executeWithRetry<T>(operation: () => Promise<T>, retries = 3): Promise<T> {
@@ -172,17 +222,35 @@ export class OpenClawService implements IAIService {
             } catch (error: any) {
                 lastError = error;
                 const status = error.response?.status;
+                const statusText = error.response?.statusText || 'Unknown';
                 
                 // Não retenta erros de cliente (4xx), exceto 429 (Rate Limit)
                 if (status && status >= 400 && status < 500 && status !== 429) {
+                    logger.error(`[OpenClaw] Erro de cliente (${status} ${statusText}): ${error.message}`);
                     throw error;
                 }
 
-                logger.warn(`[OpenClaw] Erro na tentativa ${i + 1}/${retries}: ${error.message}`);
-                await new Promise(res => setTimeout(res, 1000 * Math.pow(2, i))); // Backoff exponencial
+                let waitTime = 1000 * Math.pow(2, i); // Backoff exponencial padrão
+
+                if (status === 429) {
+                    const retryAfter = error.response?.headers?.['retry-after'];
+                    if (retryAfter) {
+                        const seconds = parseInt(retryAfter, 10);
+                        if (!isNaN(seconds)) {
+                            waitTime = seconds * 1000;
+                        }
+                    }
+                    logger.warn(`[OpenClaw] Rate Limit excedido (${status}). Aguardando ${waitTime}ms...`);
+                } else if (status && status >= 500) {
+                    logger.warn(`[OpenClaw] Erro de servidor (${status} ${statusText}). Tentativa ${i + 1}/${retries}.`);
+                } else {
+                    logger.warn(`[OpenClaw] Erro na requisição: ${error.message}. Tentativa ${i + 1}/${retries}.`);
+                }
+
+                await new Promise(res => setTimeout(res, waitTime));
             }
         }
-        logger.error(`[OpenClaw] Falha após ${retries} tentativas.`);
+        logger.error(`[OpenClaw] Falha crítica após ${retries} tentativas: ${lastError.message}`);
         throw lastError;
     }
 
@@ -233,6 +301,7 @@ export class OpenClawService implements IAIService {
                         result = JSON.stringify(await skill.execute(args));
                     }
                 } catch (e: any) {
+                    logger.error(`[OpenClaw] Erro na execução da tool ${functionName}: ${e.message}`);
                     result = `Erro na execução: ${e.message}`;
                 }
             }
@@ -247,18 +316,28 @@ export class OpenClawService implements IAIService {
 
         const response = await this.client.post('/chat/completions', {
             model: config.openclawModel,
-            messages
+            messages,
+            tools: this.getToolsDefinition() // Envia tools novamente para permitir encadeamento
         });
 
-        return response.data.choices[0].message.content;
+        const choice = response.data.choices[0];
+        const newMessage = choice.message;
+
+        // Log Token Usage se disponível
+        if (response.data.usage) {
+            logger.info(`[OpenClaw] Token Usage: ${JSON.stringify(response.data.usage)}`);
+        }
+
+        // Recursão para chamadas de ferramentas sequenciais (Multi-turn tool use)
+        if (newMessage.tool_calls && newMessage.tool_calls.length > 0) {
+            return await this.handleToolCalls(messages, newMessage, newMessage.tool_calls);
+        }
+
+        return newMessage.content || '';
     }
 
     private generateCacheKey(prompt: string, context: ChatMessage[], imageUrl?: string): string {
         const data = JSON.stringify({ prompt, context: context.length, lastMsg: context[context.length - 1], imageUrl });
         return crypto.createHash('md5').update(data).digest('hex');
-    }
-
-    private estimateTokens(text: string): number {
-        return Math.ceil(text.length / 4);
     }
 }
