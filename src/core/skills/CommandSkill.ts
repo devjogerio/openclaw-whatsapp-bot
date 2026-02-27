@@ -2,9 +2,14 @@ import { ISkill } from '../interfaces/ISkill';
 import { logger } from '../../utils/logger';
 import { exec } from 'child_process';
 
+interface CommandParams {
+    command: string;
+    timeout?: number;
+}
+
 export class CommandSkill implements ISkill {
     name = 'terminal_command';
-    description = 'Executa comandos de terminal permitidos de forma segura.';
+    description = 'Executa comandos de terminal permitidos de forma segura. Suporta timeout customizável e lista expandida de comandos de leitura.';
     
     // Lista de comandos/binários permitidos para execução
     private readonly ALLOWED_COMMANDS = [
@@ -18,7 +23,17 @@ export class CommandSkill implements ISkill {
         'date',
         'curl',
         'ping',
-        'uptime'
+        'uptime',
+        // Comandos de leitura seguros
+        'cat',
+        'head',
+        'tail',
+        'grep',
+        'find',
+        'ps',
+        'wc',
+        'sort',
+        'uniq'
     ];
 
     parameters = {
@@ -27,14 +42,20 @@ export class CommandSkill implements ISkill {
             command: {
                 type: 'string',
                 description: 'O comando de terminal completo a ser executado (ex: "git status", "npm test").'
+            },
+            timeout: {
+                type: 'number',
+                description: 'Tempo máximo de execução em milissegundos (padrão: 10000, máx: 60000).',
+                minimum: 1000,
+                maximum: 60000
             }
         },
         required: ['command']
     };
 
-    private execPromise(command: string): Promise<{ stdout: string; stderr: string }> {
+    private execPromise(command: string, timeout: number = 10000): Promise<{ stdout: string; stderr: string }> {
         return new Promise((resolve, reject) => {
-            exec(command, { timeout: 10000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+            exec(command, { timeout, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
                 if (error) {
                     // Anexa stdout/stderr ao erro para debugging
                     (error as any).stdout = stdout;
@@ -47,10 +68,11 @@ export class CommandSkill implements ISkill {
         });
     }
 
-    async execute(args: { command: string }): Promise<string> {
+    async execute(args: CommandParams): Promise<string> {
         try {
             const command = args.command.trim();
             const binary = command.split(' ')[0];
+            const timeout = Math.min(Math.max(args.timeout || 10000, 1000), 60000); // Entre 1s e 60s
 
             if (!this.ALLOWED_COMMANDS.includes(binary)) {
                 logger.warn(`[CommandSkill] Tentativa de execução de comando não permitido: ${command}`);
@@ -63,10 +85,10 @@ export class CommandSkill implements ISkill {
                 return 'Erro de Segurança: Caracteres de encadeamento (; | & ` $) não são permitidos.';
             }
 
-            logger.info(`[CommandSkill] Executando comando: ${command}`);
+            logger.info(`[CommandSkill] Executando comando: ${command} (Timeout: ${timeout}ms)`);
 
             // Executa o comando
-            const { stdout, stderr } = await this.execPromise(command);
+            const { stdout, stderr } = await this.execPromise(command, timeout);
 
             let output = '';
             if (stdout) output += `STDOUT:\n${stdout}\n`;
