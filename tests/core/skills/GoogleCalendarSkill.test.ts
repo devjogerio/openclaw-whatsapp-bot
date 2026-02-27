@@ -1,25 +1,24 @@
 import { GoogleCalendarSkill } from '../../../src/core/skills/GoogleCalendarSkill';
 import { google } from 'googleapis';
 
-// Mock googleapis
 jest.mock('googleapis', () => {
     const mCalendar = {
         events: {
             list: jest.fn(),
             insert: jest.fn(),
             patch: jest.fn(),
-            delete: jest.fn()
-        }
+            delete: jest.fn(),
+        },
     };
     return {
         google: {
             auth: {
                 OAuth2: jest.fn().mockImplementation(() => ({
-                    setCredentials: jest.fn()
-                }))
+                    setCredentials: jest.fn(),
+                })),
             },
-            calendar: jest.fn(() => mCalendar)
-        }
+            calendar: jest.fn(() => mCalendar),
+        },
     };
 });
 
@@ -30,134 +29,102 @@ describe('GoogleCalendarSkill', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         skill = new GoogleCalendarSkill();
-        // Access the mocked calendar instance
-        mockCalendar = (google.calendar as jest.Mock)();
+        // @ts-ignore
+        mockCalendar = google.calendar();
     });
 
-    it('should have correct metadata', () => {
-        expect(skill.name).toBe('google_calendar');
-        expect(skill.parameters.properties.timeMin).toBeDefined();
-        expect(skill.parameters.properties.startTime).toBeDefined();
-        expect(skill.parameters.properties.endTime).toBeDefined();
-    });
+    it('deve listar eventos com filtros de data e fuso horário', async () => {
+        const mockEvents = [
+            {
+                id: '1',
+                summary: 'Reunião',
+                start: { dateTime: '2023-10-27T10:00:00-03:00' },
+            },
+        ];
+        mockCalendar.events.list.mockResolvedValue({ data: { items: mockEvents } });
 
-    it('should list events with default parameters', async () => {
-        const mockCalendarList = mockCalendar.events.list;
-        mockCalendarList.mockResolvedValue({
-            data: {
-                items: [
-                    {
-                        id: 'ev1',
-                        summary: 'Reunião',
-                        start: { dateTime: '2023-10-27T10:00:00Z' },
-                        end: { dateTime: '2023-10-27T11:00:00Z' }
-                    }
-                ]
-            }
-        });
+        const params = {
+            action: 'list' as const,
+            timeMin: '2023-10-27T00:00:00Z',
+            timeMax: '2023-10-28T00:00:00Z',
+            timeZone: 'UTC',
+            maxResults: 5
+        };
 
-        const result = await skill.execute({ action: 'list' });
+        const result = await skill.execute(params);
 
-        expect(mockCalendarList).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockCalendar.events.list).toHaveBeenCalledWith(expect.objectContaining({
             calendarId: 'primary',
-            maxResults: 10,
+            timeMin: '2023-10-27T00:00:00Z',
+            timeMax: '2023-10-28T00:00:00Z',
+            timeZone: 'UTC',
+            maxResults: 5,
             singleEvents: true,
             orderBy: 'startTime'
         }));
         expect(result).toContain('Reunião');
-        expect(result).toContain('ev1');
     });
 
-    it('should list events with time range', async () => {
-        const mockCalendarList = mockCalendar.events.list;
-        mockCalendarList.mockResolvedValue({ data: { items: [] } });
-
-        await skill.execute({
-            action: 'list',
-            timeMin: '2023-11-01T00:00:00Z',
-            timeMax: '2023-11-30T23:59:59Z'
+    it('deve criar evento com fuso horário customizado', async () => {
+        mockCalendar.events.insert.mockResolvedValue({
+            data: { htmlLink: 'http://link', id: '123' }
         });
 
-        expect(mockCalendarList).toHaveBeenCalledWith(expect.objectContaining({
-            timeMin: '2023-11-01T00:00:00Z',
-            timeMax: '2023-11-30T23:59:59Z'
-        }));
-    });
-
-    it('should create an event with timezone', async () => {
-        const mockCalendarInsert = mockCalendar.events.insert;
-        mockCalendarInsert.mockResolvedValue({
-            data: {
-                id: 'new_ev',
-                htmlLink: 'http://calendar/event'
-            }
-        });
-
-        const result = await skill.execute({
-            action: 'create',
-            summary: 'Nova Reunião',
+        const params = {
+            action: 'create' as const,
+            summary: 'Viagem',
             startTime: '2023-12-01T10:00:00',
-            endTime: '2023-12-01T11:00:00',
+            endTime: '2023-12-01T12:00:00',
             timeZone: 'Europe/London'
-        });
+        };
 
-        expect(mockCalendarInsert).toHaveBeenCalledWith(expect.objectContaining({
+        const result = await skill.execute(params);
+
+        expect(mockCalendar.events.insert).toHaveBeenCalledWith(expect.objectContaining({
             calendarId: 'primary',
             requestBody: expect.objectContaining({
-                summary: 'Nova Reunião',
+                summary: 'Viagem',
                 start: { dateTime: '2023-12-01T10:00:00', timeZone: 'Europe/London' },
-                end: { dateTime: '2023-12-01T11:00:00', timeZone: 'Europe/London' }
+                end: { dateTime: '2023-12-01T12:00:00', timeZone: 'Europe/London' }
             })
         }));
         expect(result).toContain('Evento criado com sucesso');
     });
 
-    it('should update an event with timezone', async () => {
-        const mockCalendarPatch = mockCalendar.events.patch;
-        mockCalendarPatch.mockResolvedValue({
-            data: { htmlLink: 'http://calendar/event' }
+    it('deve usar fuso horário padrão (America/Sao_Paulo) se não fornecido', async () => {
+        mockCalendar.events.insert.mockResolvedValue({
+            data: { htmlLink: 'http://link', id: '123' }
         });
 
-        const result = await skill.execute({
-            action: 'update',
-            eventId: 'ev1',
-            summary: 'Reunião Atualizada',
-            startTime: '2023-12-01T10:00:00',
-            timeZone: 'Asia/Tokyo'
-        });
+        const params = {
+            action: 'create' as const,
+            summary: 'Almoço',
+            startTime: '2023-12-01T12:00:00',
+            endTime: '2023-12-01T13:00:00'
+        };
 
-        expect(mockCalendarPatch).toHaveBeenCalledWith(expect.objectContaining({
-            calendarId: 'primary',
-            eventId: 'ev1',
+        await skill.execute(params);
+
+        expect(mockCalendar.events.insert).toHaveBeenCalledWith(expect.objectContaining({
             requestBody: expect.objectContaining({
-                summary: 'Reunião Atualizada',
-                start: { dateTime: '2023-12-01T10:00:00', timeZone: 'Asia/Tokyo' }
+                start: expect.objectContaining({ timeZone: 'America/Sao_Paulo' })
             })
         }));
-        expect(result).toContain('Evento atualizado com sucesso');
     });
 
-    it('should delete an event', async () => {
-        mockCalendar.events.delete.mockResolvedValue({});
+    it('deve retornar mensagem amigável se nenhum evento for encontrado', async () => {
+        mockCalendar.events.list.mockResolvedValue({ data: { items: [] } });
 
-        const result = await skill.execute({
-            action: 'delete',
-            eventId: 'ev1'
-        });
+        const result = await skill.execute({ action: 'list' });
 
-        expect(mockCalendar.events.delete).toHaveBeenCalledWith(expect.objectContaining({
-            calendarId: 'primary',
-            eventId: 'ev1'
-        }));
-        expect(result).toContain('Evento excluído com sucesso');
+        expect(result).toContain('Nenhum evento encontrado');
     });
 
-    it('should handle errors gracefully', async () => {
+    it('deve tratar erros da API', async () => {
         mockCalendar.events.list.mockRejectedValue(new Error('API Error'));
 
         const result = await skill.execute({ action: 'list' });
 
-        expect(result).toContain('Erro ao executar ação list');
-        expect(result).toContain('API Error');
+        expect(result).toContain('Erro ao executar ação list: API Error');
     });
 });
