@@ -11,25 +11,22 @@ interface WebSearchParams {
 
 export class WebSearchSkill implements ISkill {
     name = 'web_search';
-    description = 'Realiza pesquisas na internet para encontrar informações atualizadas. Suporta filtros de segurança, região e limite de resultados.';
-    
+    description = 'Realiza pesquisas na internet para encontrar informações atualizadas. Suporta filtros de segurança e limite de resultados.';
     parameters = {
         type: 'object',
         properties: {
             query: {
                 type: 'string',
-                description: 'O termo ou pergunta a ser pesquisada no DuckDuckGo.'
+                description: 'O termo ou pergunta a ser pesquisada no Google/DuckDuckGo.'
             },
             limit: {
-                type: 'number',
-                description: 'Número máximo de resultados a retornar (padrão: 3, máximo: 10).',
-                minimum: 1,
-                maximum: 10
+                type: 'integer',
+                description: 'Número máximo de resultados a retornar (padrão: 3, máx: 10).'
             },
             safe_search: {
                 type: 'string',
-                description: 'Nível de filtro de segurança (strict, moderate, off). Padrão: moderate.',
-                enum: ['strict', 'moderate', 'off']
+                enum: ['strict', 'moderate', 'off'],
+                description: 'Nível de filtro de segurança (padrão: moderate).'
             },
             region: {
                 type: 'string',
@@ -39,35 +36,36 @@ export class WebSearchSkill implements ISkill {
         required: ['query']
     };
 
-    async execute(params: WebSearchParams): Promise<string> {
+    async execute(args: { query: string; limit?: number; safe_search?: string; region?: string }): Promise<string> {
         try {
-            const query = params.query;
-            const limit = Math.min(params.limit || 3, 10);
-            const region = params.region || 'br-pt';
-            
-            let safeSearch = SafeSearchType.MODERATE;
-            if (params.safe_search === 'strict') safeSearch = SafeSearchType.STRICT;
-            if (params.safe_search === 'off') safeSearch = SafeSearchType.OFF;
+            const limit = Math.min(Math.max(args.limit || 3, 1), 10);
+            const safeSearchMap: { [key: string]: SafeSearchType } = {
+                'strict': SafeSearchType.STRICT,
+                'moderate': SafeSearchType.MODERATE,
+                'off': SafeSearchType.OFF
+            };
+            const safeSearch = safeSearchMap[args.safe_search || 'moderate'] || SafeSearchType.MODERATE;
+            const region = args.region || 'br-pt';
 
-            logger.info(`[Skill] Executando busca web para: "${query}" (Limit: ${limit}, Region: ${region}, Safe: ${safeSearch})`);
+            logger.info(`[Skill] Executando busca web para: "${args.query}" (Limit: ${limit}, Safe: ${args.safe_search}, Region: ${region})`);
             
-            const results = await search(query, {
+            const results = await search(args.query, {
                 safeSearch: safeSearch,
                 locale: region
             });
 
             if (!results.results || results.results.length === 0) {
-                return 'Nenhum resultado encontrado para esta pesquisa.';
+                return `Nenhum resultado encontrado para "${args.query}".`;
             }
 
             // Formata os resultados
-            const formattedResults = results.results.slice(0, limit).map((result: SearchResult, index: number) => {
-                return `Result #${index + 1}\nTitle: ${result.title}\nURL: ${result.url}\nSnippet: ${result.description}\n`;
-            }).join('\n---\n');
+            const topResults = results.results.slice(0, limit).map((result: SearchResult, index: number) => {
+                return `${index + 1}. [${result.title}](${result.url})\n   ${result.description}`;
+            }).join('\n\n');
 
-            return `Resultados da busca para "${query}" (${results.results.length} encontrados, mostrando ${limit}):\n\n${formattedResults}`;
+            return `🔍 Resultados da busca para "${args.query}":\n\n${topResults}`;
         } catch (error: any) {
-            logger.error(`Erro ao executar WebSearchSkill: ${error.message}`);
+            logger.error(`Erro na WebSearchSkill: ${error.message}`);
             return 'Ocorreu um erro ao realizar a pesquisa na web. Tente novamente mais tarde.';
         }
     }
