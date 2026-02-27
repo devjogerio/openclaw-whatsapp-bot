@@ -167,6 +167,51 @@ export class OpenClawService implements IAIService {
         });
     }
 
+    /**
+     * Gera uma resposta estruturada em JSON.
+     * Força o modelo a retornar um JSON válido seguindo o schema (se suportado) ou via prompt engineering.
+     */
+    async generateStructuredResponse<T>(prompt: string, context: ChatMessage[] = [], schema?: object): Promise<T> {
+        const systemInstruction = schema 
+            ? `Você deve responder EXCLUSIVAMENTE com um JSON válido seguindo este schema: ${JSON.stringify(schema)}`
+            : 'Você deve responder EXCLUSIVAMENTE com um JSON válido.';
+
+        const enhancedContext: ChatMessage[] = [
+            { role: 'system', content: systemInstruction },
+            ...context
+        ];
+
+        // Tenta usar o modo JSON nativo se possível (depende do modelo/provider)
+        // Aqui assumimos que o provider suporta response_format ou que o prompt é suficiente
+        const responseText = await this.executeWithRetry(async () => {
+            const messages = this.formatMessages(prompt, enhancedContext);
+            
+            const response = await this.client.post('/chat/completions', {
+                model: config.openclawModel,
+                messages,
+                temperature: 0.3, // Temperatura menor para maior determinismo
+                response_format: { type: "json_object" } // Tenta forçar JSON mode
+            });
+
+            return response.data.choices[0].message.content || '{}';
+        });
+
+        try {
+            return JSON.parse(responseText) as T;
+        } catch (e) {
+            logger.error(`[OpenClaw] Falha ao parsear JSON: ${responseText}`);
+            throw new Error('Falha ao gerar resposta estruturada.');
+        }
+    }
+
+    /**
+     * Estima a quantidade de tokens em um texto.
+     * Útil para truncar contextos longos.
+     */
+    public estimateTokens(text: string): number {
+        return Math.ceil(text.length / 4);
+    }
+
     // --- Helpers Privados ---
 
     private async executeWithRetry<T>(operation: () => Promise<T>, retries = 3): Promise<T> {
@@ -185,15 +230,24 @@ export class OpenClawService implements IAIService {
                     throw error;
                 }
 
+                let waitTime = 1000 * Math.pow(2, i); // Backoff exponencial padrão
+
                 if (status === 429) {
-                    logger.warn(`[OpenClaw] Rate Limit excedido (${status}). Tentativa ${i + 1}/${retries}. Aguardando...`);
+                    const retryAfter = error.response?.headers?.['retry-after'];
+                    if (retryAfter) {
+                        const seconds = parseInt(retryAfter, 10);
+                        if (!isNaN(seconds)) {
+                            waitTime = seconds * 1000;
+                        }
+                    }
+                    logger.warn(`[OpenClaw] Rate Limit excedido (${status}). Aguardando ${waitTime}ms...`);
                 } else if (status && status >= 500) {
                     logger.warn(`[OpenClaw] Erro de servidor (${status} ${statusText}). Tentativa ${i + 1}/${retries}.`);
                 } else {
                     logger.warn(`[OpenClaw] Erro na requisição: ${error.message}. Tentativa ${i + 1}/${retries}.`);
                 }
 
-                await new Promise(res => setTimeout(res, 1000 * Math.pow(2, i))); // Backoff exponencial
+                await new Promise(res => setTimeout(res, waitTime));
             }
         }
         logger.error(`[OpenClaw] Falha crítica após ${retries} tentativas: ${lastError.message}`);
@@ -285,9 +339,5 @@ export class OpenClawService implements IAIService {
     private generateCacheKey(prompt: string, context: ChatMessage[], imageUrl?: string): string {
         const data = JSON.stringify({ prompt, context: context.length, lastMsg: context[context.length - 1], imageUrl });
         return crypto.createHash('md5').update(data).digest('hex');
-    }
-
-    private estimateTokens(text: string): number {
-        return Math.ceil(text.length / 4);
     }
 }

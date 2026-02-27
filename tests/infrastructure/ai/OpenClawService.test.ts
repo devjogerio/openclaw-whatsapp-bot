@@ -198,4 +198,68 @@ describe('OpenClawService', () => {
         
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Rate Limit excedido'));
     });
+
+    it('deve respeitar header Retry-After', async () => {
+        const error429 = { 
+            response: { 
+                status: 429, 
+                headers: { 'retry-after': '2' } // 2 segundos
+            }, 
+            message: 'Rate Limit' 
+        };
+        const successResponse = { data: { choices: [{ message: { content: 'Success' } }] } };
+        
+        const start = Date.now();
+        mockAxiosInstance.post
+            .mockRejectedValueOnce(error429)
+            .mockResolvedValueOnce(successResponse);
+
+        await service.generateResponse('Retry After Test');
+        const duration = Date.now() - start;
+
+        expect(duration).toBeGreaterThanOrEqual(2000);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Aguardando 2000ms'));
+    });
+
+    it('deve gerar resposta estruturada', async () => {
+        const mockJson = { key: "value", number: 123 };
+        const mockResponse = {
+            data: {
+                choices: [{
+                    message: {
+                        content: JSON.stringify(mockJson)
+                    }
+                }]
+            }
+        };
+        mockAxiosInstance.post.mockResolvedValue(mockResponse);
+
+        const result = await service.generateStructuredResponse<{ key: string, number: number }>('Generate JSON');
+        
+        expect(result).toEqual(mockJson);
+        expect(mockAxiosInstance.post).toHaveBeenCalledWith('/chat/completions', expect.objectContaining({
+            response_format: { type: "json_object" }
+        }));
+    });
+
+    it('deve falhar se resposta estruturada for inválida', async () => {
+        const mockResponse = {
+            data: {
+                choices: [{
+                    message: {
+                        content: 'Invalid JSON'
+                    }
+                }]
+            }
+        };
+        mockAxiosInstance.post.mockResolvedValue(mockResponse);
+
+        await expect(service.generateStructuredResponse('Generate JSON')).rejects.toThrow('Falha ao gerar resposta estruturada');
+    });
+
+    it('deve estimar tokens corretamente', () => {
+        const text = "Hello World"; // 11 chars
+        // Math.ceil(11 / 4) = 3
+        expect(service.estimateTokens(text)).toBe(3);
+    });
 });
