@@ -23,6 +23,7 @@ O bot possui um sistema extensível de skills que permite interagir com o mundo 
 - **Web Search**: Realiza pesquisas na internet em tempo real (via DuckDuckGo) para fornecer informações atualizadas.
 - **File Management**:
   - Listagem e leitura segura de arquivos locais.
+  - **Novidades**: Leitura parcial (linhas específicas), listagem recursiva e metadados de arquivos.
   - **Leitura de PDF**: Extração e análise de conteúdo de documentos PDF.
   - Proteção contra *Path Traversal* para segurança do sistema.
 - **Terminal Commands**:
