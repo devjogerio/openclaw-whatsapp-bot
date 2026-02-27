@@ -78,4 +78,38 @@ describe('SkillRegistry', () => {
         expect(registry.get('skill2')).toBeDefined();
         expect(registry.getAll()).toHaveLength(2);
     });
+
+    it('should check if skill exists', () => {
+        registry.register(mockSkill);
+        expect(registry.has('test_skill')).toBe(true);
+        expect(registry.has('non_existent')).toBe(false);
+    });
+
+    it('should unregister a skill', () => {
+        registry.register(mockSkill);
+        expect(registry.unregister('test_skill')).toBe(true);
+        expect(registry.has('test_skill')).toBe(false);
+        expect(registry.unregister('test_skill')).toBe(false); // Already removed
+    });
+
+    it('should clear all skills', () => {
+        const skill1 = { ...mockSkill, name: 'skill1' };
+        const skill2 = { ...mockSkill, name: 'skill2' };
+        registry.registerAll([skill1, skill2]);
+        
+        registry.clear();
+        expect(registry.getAll()).toHaveLength(0);
+        expect(registry.has('skill1')).toBe(false);
+    });
+
+    it('should list all skill names', () => {
+        const skill1 = { ...mockSkill, name: 'skill1' };
+        const skill2 = { ...mockSkill, name: 'skill2' };
+        registry.registerAll([skill1, skill2]);
+        
+        const names = registry.listNames();
+        expect(names).toContain('skill1');
+        expect(names).toContain('skill2');
+        expect(names).toHaveLength(2);
+    });
 });

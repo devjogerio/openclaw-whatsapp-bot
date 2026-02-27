@@ -36,6 +36,40 @@ export class SkillRegistry {
     }
 
     /**
+     * Remove uma skill do registro.
+     */
+    unregister(name: string): boolean {
+        if (this.skills.has(name)) {
+            this.skills.delete(name);
+            logger.info(`[SkillRegistry] Skill removida: ${name}`);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Verifica se uma skill está registrada.
+     */
+    has(name: string): boolean {
+        return this.skills.has(name);
+    }
+
+    /**
+     * Limpa todas as skills registradas.
+     */
+    clear(): void {
+        this.skills.clear();
+        logger.info('[SkillRegistry] Registro de skills limpo.');
+    }
+
+    /**
+     * Retorna uma lista com os nomes de todas as skills registradas.
+     */
+    listNames(): string[] {
+        return Array.from(this.skills.keys());
+    }
+
+    /**
      * Retorna todas as skills registradas.
      */
     getAll(): ISkill[] {
