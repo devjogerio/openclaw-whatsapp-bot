@@ -3,10 +3,16 @@ import { OpenClawService } from '../../../src/infrastructure/ai/OpenClawService'
 import { config } from '../../../src/config/env';
 import axios from 'axios';
 import { SkillRegistry } from '../../../src/core/services/SkillRegistry';
+import { logger } from '../../../src/utils/logger';
 
 // Mock do axios
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+// Spy on logger
+jest.spyOn(logger, 'warn').mockImplementation(() => {});
+jest.spyOn(logger, 'error').mockImplementation(() => {});
+jest.spyOn(logger, 'info').mockImplementation(() => {});
 
 describe('OpenClawService', () => {
     let service: OpenClawService;
@@ -127,5 +133,69 @@ describe('OpenClawService', () => {
         }), expect.objectContaining({
             responseType: 'stream'
         }));
+    });
+
+    it('deve lidar com chamadas de ferramentas recursivas', async () => {
+        // Setup mock skill
+        const mockSkill = {
+            execute: jest.fn().mockResolvedValue('Resultado da Tool')
+        };
+        const mockRegistry = {
+            get: jest.fn().mockReturnValue(mockSkill),
+            getToolsDefinition: jest.fn().mockReturnValue([{
+                function: { name: 'test_tool', description: 'desc', parameters: {} }
+            }])
+        };
+        // Re-instantiate service with mock registry
+        service = new OpenClawService(mockRegistry as any);
+        
+        // Mock responses
+        // 1. Assistant asks for tool
+        const response1 = {
+            data: {
+                choices: [{
+                    message: {
+                        tool_calls: [{
+                            id: 'call_1',
+                            function: { name: 'test_tool', arguments: '{}' }
+                        }]
+                    }
+                }]
+            }
+        };
+        // 2. Assistant receives tool output and returns final answer
+        const response2 = {
+            data: {
+                choices: [{
+                    message: {
+                        content: 'Resposta Final'
+                    }
+                }],
+                usage: { total_tokens: 100 }
+            }
+        };
+
+        mockAxiosInstance.post
+            .mockResolvedValueOnce(response1)
+            .mockResolvedValueOnce(response2);
+
+        const result = await service.generateResponse('Use a tool');
+
+        expect(result).toBe('Resposta Final');
+        expect(mockSkill.execute).toHaveBeenCalled();
+        expect(mockAxiosInstance.post).toHaveBeenCalledTimes(2);
+    });
+
+    it('deve logar erro específico para 429', async () => {
+        const error429 = { response: { status: 429, statusText: 'Too Many Requests' }, message: 'Rate Limit' };
+        const successResponse = { data: { choices: [{ message: { content: 'Success' } }] } };
+        
+        mockAxiosInstance.post
+            .mockRejectedValueOnce(error429)
+            .mockResolvedValueOnce(successResponse);
+
+        await service.generateResponse('429 Test');
+        
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Rate Limit excedido'));
     });
 });

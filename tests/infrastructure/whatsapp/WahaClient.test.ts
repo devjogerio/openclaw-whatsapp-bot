@@ -95,4 +95,44 @@ describe('WahaClient', () => {
             expect.objectContaining({ responseType: 'arraybuffer' })
         );
     });
+
+    it('should retry on network error', async () => {
+        const to = '5511999999999@c.us';
+        const message = 'Hello';
+        
+        // Mock implementation: Fail twice, succeed on third
+        (axios.post as jest.Mock)
+            .mockRejectedValueOnce(new Error('Network Error 1'))
+            .mockRejectedValueOnce(new Error('Network Error 2'))
+            .mockResolvedValue({ data: { id: 'msg_id' } });
+
+        await client.sendMessage(to, message);
+
+        expect(axios.post).toHaveBeenCalledTimes(3);
+    }, 10000);
+
+    it('should not retry on client error (4xx)', async () => {
+        const to = '5511999999999@c.us';
+        const message = 'Hello';
+        
+        const clientError = new Error('Bad Request');
+        // @ts-ignore
+        clientError.response = { status: 400 };
+
+        (axios.post as jest.Mock).mockRejectedValue(clientError);
+
+        await expect(client.sendMessage(to, message)).rejects.toThrow('Bad Request');
+        expect(axios.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('should throw after max retries', async () => {
+        const to = '5511999999999@c.us';
+        const message = 'Hello';
+        
+        (axios.post as jest.Mock).mockRejectedValue(new Error('Persistent Error'));
+
+        await expect(client.sendMessage(to, message)).rejects.toThrow('Persistent Error');
+        // Default retries is 3
+        expect(axios.post).toHaveBeenCalledTimes(3);
+    }, 10000);
 });
