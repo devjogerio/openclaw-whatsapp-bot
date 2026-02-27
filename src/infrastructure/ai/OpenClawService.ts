@@ -64,6 +64,11 @@ export class OpenClawService implements IAIService {
                     temperature: 0.7,
                 });
 
+                // Log Token Usage se disponível
+                if (response.data.usage) {
+                    logger.info(`[OpenClaw] Token Usage (Initial): ${JSON.stringify(response.data.usage)}`);
+                }
+
                 const choice = response.data.choices[0];
                 const message = choice.message;
                 const outputContent = message.content || '';
@@ -73,7 +78,7 @@ export class OpenClawService implements IAIService {
                     return await this.handleToolCalls(messages, message, message.tool_calls);
                 }
                 
-                // Salva no cache se não for tool call
+                // Salva no cache se não for tool call e tiver conteúdo
                 if (outputContent) {
                     await this.cache.set(cacheKey, outputContent, config.cacheTtl);
                 }
@@ -172,17 +177,26 @@ export class OpenClawService implements IAIService {
             } catch (error: any) {
                 lastError = error;
                 const status = error.response?.status;
+                const statusText = error.response?.statusText || 'Unknown';
                 
                 // Não retenta erros de cliente (4xx), exceto 429 (Rate Limit)
                 if (status && status >= 400 && status < 500 && status !== 429) {
+                    logger.error(`[OpenClaw] Erro de cliente (${status} ${statusText}): ${error.message}`);
                     throw error;
                 }
 
-                logger.warn(`[OpenClaw] Erro na tentativa ${i + 1}/${retries}: ${error.message}`);
+                if (status === 429) {
+                    logger.warn(`[OpenClaw] Rate Limit excedido (${status}). Tentativa ${i + 1}/${retries}. Aguardando...`);
+                } else if (status && status >= 500) {
+                    logger.warn(`[OpenClaw] Erro de servidor (${status} ${statusText}). Tentativa ${i + 1}/${retries}.`);
+                } else {
+                    logger.warn(`[OpenClaw] Erro na requisição: ${error.message}. Tentativa ${i + 1}/${retries}.`);
+                }
+
                 await new Promise(res => setTimeout(res, 1000 * Math.pow(2, i))); // Backoff exponencial
             }
         }
-        logger.error(`[OpenClaw] Falha após ${retries} tentativas.`);
+        logger.error(`[OpenClaw] Falha crítica após ${retries} tentativas: ${lastError.message}`);
         throw lastError;
     }
 
@@ -233,6 +247,7 @@ export class OpenClawService implements IAIService {
                         result = JSON.stringify(await skill.execute(args));
                     }
                 } catch (e: any) {
+                    logger.error(`[OpenClaw] Erro na execução da tool ${functionName}: ${e.message}`);
                     result = `Erro na execução: ${e.message}`;
                 }
             }
@@ -247,10 +262,24 @@ export class OpenClawService implements IAIService {
 
         const response = await this.client.post('/chat/completions', {
             model: config.openclawModel,
-            messages
+            messages,
+            tools: this.getToolsDefinition() // Envia tools novamente para permitir encadeamento
         });
 
-        return response.data.choices[0].message.content;
+        const choice = response.data.choices[0];
+        const newMessage = choice.message;
+
+        // Log Token Usage se disponível
+        if (response.data.usage) {
+            logger.info(`[OpenClaw] Token Usage: ${JSON.stringify(response.data.usage)}`);
+        }
+
+        // Recursão para chamadas de ferramentas sequenciais (Multi-turn tool use)
+        if (newMessage.tool_calls && newMessage.tool_calls.length > 0) {
+            return await this.handleToolCalls(messages, newMessage, newMessage.tool_calls);
+        }
+
+        return newMessage.content || '';
     }
 
     private generateCacheKey(prompt: string, context: ChatMessage[], imageUrl?: string): string {
