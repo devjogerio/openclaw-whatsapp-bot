@@ -84,7 +84,7 @@ export class WahaClient implements IMessagingClient {
     }
 
     async sendMessage(to: string, message: string): Promise<void> {
-        try {
+        return this.executeWithRetry(async () => {
             await axios.post(`${this.baseUrl}/api/sendText`, {
                 chatId: to,
                 text: message,
@@ -95,10 +95,7 @@ export class WahaClient implements IMessagingClient {
                     'X-Api-Key': this.apiKey
                 }
             });
-        } catch (error: any) {
-            logger.error(`Erro ao enviar mensagem via WAHA: ${error.message}`);
-            throw error;
-        }
+        });
     }
 
     async setTypingState(to: string, state: boolean): Promise<void> {
@@ -118,7 +115,7 @@ export class WahaClient implements IMessagingClient {
     }
 
     async sendAudio(to: string, audioBuffer: Buffer): Promise<void> {
-        try {
+        return this.executeWithRetry(async () => {
             // WAHA espera base64 para arquivos ou URL
             const base64Audio = audioBuffer.toString('base64');
             const dataUrl = `data:audio/mp4;base64,${base64Audio}`;
@@ -137,14 +134,11 @@ export class WahaClient implements IMessagingClient {
                     'X-Api-Key': this.apiKey
                 }
             });
-        } catch (error: any) {
-            logger.error(`Erro ao enviar áudio via WAHA: ${error.message}`);
-            throw error;
-        }
+        });
     }
 
     async downloadMedia(fileId: string): Promise<Buffer> {
-        try {
+        return this.executeWithRetry(async () => {
             const fileUrl = fileId.startsWith('http') ? fileId : `${this.baseUrl}/api/files/${fileId}`;
             
             const response = await axios.get(fileUrl, {
@@ -155,9 +149,29 @@ export class WahaClient implements IMessagingClient {
             });
             
             return Buffer.from(response.data);
-        } catch (error: any) {
-            logger.error(`Erro ao baixar arquivo do WAHA: ${error.message}`);
-            throw error;
+        });
+    }
+
+    private async executeWithRetry<T>(operation: () => Promise<T>, retries = 3): Promise<T> {
+        let lastError: any;
+        for (let i = 0; i < retries; i++) {
+            try {
+                return await operation();
+            } catch (error: any) {
+                lastError = error;
+                const status = error.response?.status;
+                
+                // Não retenta erros de cliente (4xx)
+                if (status && status >= 400 && status < 500) {
+                    logger.error(`[WAHA] Erro de cliente (${status}): ${error.message}`);
+                    throw error;
+                }
+
+                logger.warn(`[WAHA] Erro na tentativa ${i + 1}/${retries}: ${error.message}`);
+                await new Promise(res => setTimeout(res, 1000 * Math.pow(2, i)));
+            }
         }
+        logger.error(`[WAHA] Falha após ${retries} tentativas: ${lastError.message}`);
+        throw lastError;
     }
 }
