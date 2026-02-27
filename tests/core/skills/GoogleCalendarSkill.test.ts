@@ -86,4 +86,48 @@ describe('GoogleCalendarSkill', () => {
         expect(result).toContain('Erro ao executar ação list');
         expect(result).toContain('API Error');
     });
+
+    it('should update an event correctly', async () => {
+        // Access the mocked calendar instance
+        const calendarMock = (google.calendar as jest.Mock)();
+        
+        calendarMock.events.patch.mockResolvedValue({
+            data: { htmlLink: 'http://link/updated' },
+        });
+
+        const params = {
+            action: 'update' as const,
+            eventId: '123',
+            summary: 'Updated Summary',
+        };
+
+        const result = await skill.execute(params);
+
+        expect(calendarMock.events.patch).toHaveBeenCalledWith(expect.objectContaining({
+            calendarId: 'primary',
+            eventId: '123',
+            requestBody: expect.objectContaining({
+                summary: 'Updated Summary',
+            }),
+        }));
+        expect(result).toContain('Evento atualizado com sucesso');
+    });
+
+    it('should return error when updating without fields', async () => {
+        const result = await skill.execute({ action: 'update', eventId: '123' });
+        expect(result).toBe('Nenhum campo para atualizar fornecido.');
+    });
+
+    it('should delete an event correctly', async () => {
+        const calendarMock = (google.calendar as jest.Mock)();
+        calendarMock.events.delete.mockResolvedValue({});
+
+        const result = await skill.execute({ action: 'delete', eventId: '123' });
+
+        expect(calendarMock.events.delete).toHaveBeenCalledWith(expect.objectContaining({
+            calendarId: 'primary',
+            eventId: '123',
+        }));
+        expect(result).toContain('Evento excluído com sucesso');
+    });
 });
